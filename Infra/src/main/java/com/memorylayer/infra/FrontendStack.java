@@ -40,7 +40,8 @@ public class FrontendStack extends Stack {
     private static final String SPA_REWRITE_SOURCE =
             "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json)$)([^.]+$)/>";
 
-    public FrontendStack(final Construct scope, final String id, final StackProps props, final String apiBaseUrl) {
+    public FrontendStack(final Construct scope, final String id, final StackProps props,
+                          final String apiBaseUrl, final AuthStack authStack) {
         super(scope, id, props);
 
         CfnApp app = CfnApp.Builder.create(this, "AmplifyApp")
@@ -86,6 +87,22 @@ public class FrontendStack extends Stack {
                         CfnBranch.EnvironmentVariableProperty.builder()
                                 .name("VITE_API_BASE_URL")
                                 .value(apiBaseUrl)
+                                .build(),
+                        CfnBranch.EnvironmentVariableProperty.builder()
+                                .name("VITE_COGNITO_AUTHORITY")
+                                .value(authStack.getIssuer())
+                                .build(),
+                        CfnBranch.EnvironmentVariableProperty.builder()
+                                .name("VITE_COGNITO_CLIENT_ID")
+                                .value(authStack.getUserPoolClientId())
+                                .build(),
+                        CfnBranch.EnvironmentVariableProperty.builder()
+                                .name("VITE_COGNITO_DOMAIN")
+                                .value(authStack.getHostedDomain())
+                                .build(),
+                        CfnBranch.EnvironmentVariableProperty.builder()
+                                .name("VITE_COGNITO_API_SCOPE")
+                                .value(AuthStack.FULL_ACCESS_SCOPE)
                                 .build()))
                 .build();
 

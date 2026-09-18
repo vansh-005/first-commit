@@ -207,6 +207,45 @@ This route must not query Bedrock or other expensive downstream services.
 
 ---
 
+# 8a. Internal diagnostic route (Phase 2, temporary)
+
+## `GET /api/v1/me`
+
+**This is not a permanent product endpoint.** It exists solely to prove the Cognito JWT
+authorizer, audience/issuer validation, and the `memory-api/access` custom scope requirement
+work end to end, since Phase 2 ships before any real protected business endpoint exists.
+Remove or repurpose once Phase 3+ endpoints make it redundant for that purpose.
+
+Authentication:
+
+```text
+Required — Bearer access token
+```
+
+API Gateway JWT authorizer requirements:
+
+```text
+issuer   = the Cognito user pool
+audience = the SPA app client ID
+scope    = memory-api/access   (enforced by API Gateway via RouteAuthorizationScopes,
+                                 not application code — a request without this scope in
+                                 its access token's `scope` claim gets 403 before the
+                                 Lambda is invoked)
+```
+
+Response:
+
+```json
+{
+  "userId": "<cognito-sub>"
+}
+```
+
+`userId` is the authenticated user's Cognito `sub`, read from the already-validated JWT
+claims API Gateway attaches to the request context.
+
+---
+
 # 9. Upload model
 
 Single-file and bulk uploads use the **same endpoint**.

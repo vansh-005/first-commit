@@ -5,6 +5,7 @@ import software.amazon.awscdk.Duration;
 import software.amazon.awscdk.RemovalPolicy;
 import software.amazon.awscdk.Stack;
 import software.amazon.awscdk.StackProps;
+import software.amazon.awscdk.services.apigatewayv2.CfnAuthorizer;
 import software.amazon.awscdk.services.apigatewayv2.CfnIntegration;
 import software.amazon.awscdk.services.apigatewayv2.CfnRoute;
 import software.amazon.awscdk.services.apigatewayv2.CorsHttpMethod;
@@ -25,21 +26,23 @@ import software.constructs.Construct;
 import java.util.List;
 
 /**
- * Phase 1: a single public health-check route. No auth, no persistence, no downstream
- * AWS services — those arrive in later phases per Docs/TASKS.md.
+ * Phase 1 added a single public health-check route. Phase 2 adds a Cognito JWT authorizer
+ * and one protected diagnostic route (`/api/v1/me`) proving the authorizer/scope wiring
+ * works; real protected business endpoints arrive in later phases per Docs/TASKS.md.
  *
  * <p>The Lambda integration/route are wired with the stable L1 constructs
  * ({@code CfnIntegration}/{@code CfnRoute}) rather than the {@code HttpLambdaIntegration} L2:
  * that L2 only ships in the long-abandoned {@code apigatewayv2-integrations-alpha} module
  * (last published for aws-cdk-lib 2.114.1), and it was compiled against a pre-stabilization
  * copy of {@code apigatewayv2}'s core types — incompatible with the stabilized {@code HttpApi}
- * now bundled in aws-cdk-lib, so the two cannot be used together in Java.
+ * now bundled in aws-cdk-lib, so the two cannot be used together in Java. The same reasoning
+ * applies to the JWT authorizer, wired here with the stable L1 {@code CfnAuthorizer}.
  */
 public class ApiStack extends Stack {
 
     private final String apiEndpoint;
 
-    public ApiStack(final Construct scope, final String id, final StackProps props) {
+    public ApiStack(final Construct scope, final String id, final StackProps props, final AuthStack authStack) {
         super(scope, id, props);
 
         LogGroup logGroup = LogGroup.Builder.create(this, "ApiFunctionLogGroup")
@@ -69,16 +72,16 @@ public class ApiStack extends Stack {
         HttpApi httpApi = HttpApi.Builder.create(this, "HttpApi")
                 .apiName("memory-layer-api")
                 .corsPreflight(CorsPreflightOptions.builder()
-                        // TEMPORARY (Phase 1 only): /health is the only public route, so a
-                        // permissive origin is acceptable. Tighten this to the deployed
-                        // Amplify origin + localhost once authenticated routes are added.
-                        .allowOrigins(List.of("*"))
+                        // Tightened in Phase 2 now that authenticated routes exist and real
+                        // origins are known. Only the deployed Amplify origin + local dev.
+                        .allowOrigins(List.of(InfraApp.AMPLIFY_ORIGIN, "http://localhost:5173"))
                         .allowMethods(List.of(CorsHttpMethod.GET))
-                        .allowHeaders(List.of("Content-Type"))
+                        .allowHeaders(List.of("Content-Type", "Authorization"))
                         .build())
                 .build();
 
-        CfnIntegration integration = CfnIntegration.Builder.create(this, "HealthIntegration")
+        // Single integration reused by every route: same Lambda handles all of them.
+        CfnIntegration integration = CfnIntegration.Builder.create(this, "ApiIntegration")
                 .apiId(httpApi.getHttpApiId())
                 .integrationType("AWS_PROXY")
                 .integrationUri(liveAlias.getFunctionArn())
@@ -91,10 +94,40 @@ public class ApiStack extends Stack {
                 .target("integrations/" + integration.getRef())
                 .build();
 
+        CfnAuthorizer authorizer = CfnAuthorizer.Builder.create(this, "JwtAuthorizer")
+                .apiId(httpApi.getHttpApiId())
+                .authorizerType("JWT")
+                .identitySource(List.of("$request.header.Authorization"))
+                .name("CognitoJwtAuthorizer")
+                .jwtConfiguration(CfnAuthorizer.JWTConfigurationProperty.builder()
+                        .audience(List.of(authStack.getUserPoolClientId()))
+                        .issuer(authStack.getIssuer())
+                        .build())
+                .build();
+
+        // Internal Phase 2 diagnostic route only (see Docs/API.md) — proves the JWT
+        // authorizer + custom scope wiring works. Not a permanent product endpoint.
+        CfnRoute.Builder.create(this, "MeRoute")
+                .apiId(httpApi.getHttpApiId())
+                .routeKey("GET /api/v1/me")
+                .target("integrations/" + integration.getRef())
+                .authorizationType("JWT")
+                .authorizerId(authorizer.getRef())
+                // API Gateway rejects the request with 403 before invoking the Lambda if the
+                // access token's `scope` claim doesn't contain this — no backend check needed.
+                .authorizationScopes(List.of(AuthStack.FULL_ACCESS_SCOPE))
+                .build();
+
         liveAlias.addPermission("ApiGatewayInvoke", Permission.builder()
                 .principal(new ServicePrincipal("apigateway.amazonaws.com"))
                 .action("lambda:InvokeFunction")
                 .sourceArn(httpApi.arnForExecuteApi("GET", "/api/v1/health", "*"))
+                .build());
+
+        liveAlias.addPermission("ApiGatewayInvokeMe", Permission.builder()
+                .principal(new ServicePrincipal("apigateway.amazonaws.com"))
+                .action("lambda:InvokeFunction")
+                .sourceArn(httpApi.arnForExecuteApi("GET", "/api/v1/me", "*"))
                 .build());
 
         this.apiEndpoint = httpApi.getApiEndpoint();

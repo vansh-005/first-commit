@@ -1,9 +1,8 @@
+import { oidcConfig } from '@/auth/oidcConfig'
 import type { ReactNode } from 'react'
+import { AuthProvider } from 'react-oidc-context'
 
-/**
- * Composition root for app-wide context providers. Empty in Phase 1 — theme, auth, and
- * query-client providers are added as those phases land, without callers needing to change.
- */
+/** Composition root for app-wide context providers. */
 export function AppProviders({ children }: { children: ReactNode }) {
-  return <>{children}</>
+  return <AuthProvider {...oidcConfig}>{children}</AuthProvider>
 }

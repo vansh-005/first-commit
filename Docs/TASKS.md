@@ -77,28 +77,33 @@ Do not start stretch features until this path works end-to-end.
 - [x] Add CloudWatch logs
 - [x] `cdk synth` succeeds
 - [x] Deploy first stack — `MemoryLayerApiStack` deployed to `ap-south-1`
-      (`https://0sby0h3d1a.execute-api.ap-south-1.amazonaws.com`). `MemoryLayerFrontendStack`
-      intentionally not deployed yet (see blockers below).
+      (`https://0sby0h3d1a.execute-api.ap-south-1.amazonaws.com`); `MemoryLayerFrontendStack`
+      also deployed (Amplify app `d28nd6lc9fjyiv`,
+      `https://main.d28nd6lc9fjyiv.amplifyapp.com`) after the GitHub App/token prerequisite
+      was completed.
 
 ## Verification
 
-- [ ] Public deployed frontend opens — blocked on Amplify GitHub token setup + deploy
+- [x] Public deployed frontend opens — verified via curl (`200`, correct HTML/assets);
+      direct navigation to a client-side route also returns `200`, confirming the Amplify
+      SPA rewrite rule works
 - [x] Deployed `/api/v1/health` returns `200` — verified via curl (cold start ~3.2s with
       SnapStart restore, warm ~0.26s); CloudWatch logs show clean SnapStart RESTORE_REPORT
       and structured `RequestLog` lines with no errors
-- [ ] Frontend can reach deployed API — blocked on frontend deploy
+- [x] Frontend can reach deployed API — verified via CORS: simulated the browser's
+      preflight + GET from the Amplify origin against `/api/v1/health`, both succeed. Note:
+      the production bundle itself has no code path that calls the API yet (the Phase 1
+      health-check UI is intentionally dev-only and tree-shaken from production builds), so
+      this was verified at the network/CORS level rather than observed on the live site.
 - [ ] Commit baseline — awaiting user approval to commit/push
 
-### Phase 1 blockers
+### Phase 1 notes
 
-- **Amplify GitHub access token**: `FrontendStack` (Amplify Hosting via `CfnApp`/`CfnBranch`)
-  requires a GitHub App/PAT access token stored in Secrets Manager at
-  `memory-layer/amplify-github-token` before it can deploy. This is a manual, one-time,
-  outside-CDK step (see `Infra/src/main/java/com/memorylayer/infra/FrontendStack.java`
-  class Javadoc for exact steps). Not yet done.
-- **Frontend not deployed yet**: per project decision, only `MemoryLayerApiStack` is
-  deployed this pass. `MemoryLayerFrontendStack`, the frontend push, and full end-to-end
-  verification happen after the GitHub token is set up and the user approves.
+- Amplify GitHub App was installed with access limited to `vansh-005/first-commit`, and the
+  PAT is stored in Secrets Manager (`ap-south-1`) as `memory-layer/amplify-github-token`.
+- Creating `CfnBranch` did not itself trigger a build (`enableAutoBuild` only applies to
+  future pushes); the first build was started manually via
+  `aws amplify start-job --job-type RELEASE`.
 
 ### Phase 1 exit condition
 
@@ -114,42 +119,71 @@ Do not move on until this works.
 
 ## Cognito
 
-- [ ] Create Cognito User Pool
-- [ ] Configure app client
-- [ ] Configure callback/logout URLs
-- [ ] Configure email/password authentication
-- [ ] Configure Cognito managed login / hosted auth flow
-- [ ] Configure Google as federated identity provider
+- [x] Create Cognito User Pool (`MemoryLayerAuthStack`, CDK)
+- [x] Configure app client (public/no-secret, PKCE, `AuthorizationCodeGrant`)
+- [x] Configure callback/logout URLs (Amplify origin `/login` and `/`, plus
+      `http://localhost:5173` for dev)
+- [x] Configure email/password authentication (native Cognito sign-in, self-signup enabled)
+- [x] Configure Cognito managed login / hosted auth flow (Cognito-prefix domain
+      `memory-layer-auth-<account-suffix>`)
+- [x] Configure Google as federated identity provider (attribute mapping: `email`→`email`,
+      `email_verified`→`email_verified`, `name`→`name`, `picture`→`picture`)
+- [x] Custom resource-server scope `memory-api/access`, requested by the SPA client and
+      required by `/api/v1/me` via native HTTP API `AuthorizationScopes` (amendment beyond
+      the original plan)
 
 ## Google OAuth
 
-- [ ] Create/configure Google OAuth client
+- [ ] Create/configure Google OAuth client — **blocked on you**; exact redirect URI given
+      below
 - [ ] Configure Cognito redirect URI in Google
-- [ ] Store client secret securely
-- [ ] Verify Google login end-to-end
+- [x] Store client secret securely — code wired to read
+      `memory-layer/google-oauth-client-secret` from Secrets Manager via a CloudFormation
+      dynamic reference (verified in the synthesized template: never plaintext)
+- [ ] Verify Google login end-to-end — blocked on deploy, which is blocked on the above
 
 ## API authorization
 
-- [ ] Configure API Gateway JWT authorizer
-- [ ] Protect all endpoints except `/health`
-- [ ] Backend reads validated JWT claims
-- [ ] Backend derives canonical `userId` from `sub`
+- [x] Configure API Gateway JWT authorizer (`CfnAuthorizer`, L1 — see `ApiStack` Javadoc for
+      why not the L2)
+- [x] Protect `/api/v1/me` (diagnostic route) with the authorizer + required scope;
+      `/api/v1/health` remains public. No other routes exist yet to protect.
+- [x] Backend reads validated JWT claims (`AuthenticatedUserResolver`, reads the API
+      Gateway authorizer context aws-serverless-java-container attaches to the request)
+- [x] Backend derives canonical `userId` from `sub`
 
 ## Frontend
 
-- [ ] Login page
-- [ ] `Continue with Google`
-- [ ] Email/password fallback
-- [ ] Logout
-- [ ] Authenticated route handling
-- [ ] Token attachment to API calls
+- [x] Login page (`react-oidc-context`, not Amplify Auth)
+- [x] `Continue with Google` (hosted-page redirect with `identity_provider=Google` hint)
+- [x] Email/password fallback (redirects to the same hosted page without the hint, showing
+      Cognito's native form — see Phase 2 plan for the FRONTEND.md deviation this implies)
+- [x] Logout (manual redirect to Cognito's non-standard `/logout` endpoint)
+- [x] Authenticated route handling (`ProtectedRoute`, guards all `/app/*` routes)
+- [x] Token attachment to API calls (`Authorization: Bearer <access_token>`, access token
+      read via a shared `oidc-client-ts` `UserManager`)
 
 ## Verification
 
-- [ ] Unauthenticated protected request returns `401`
-- [ ] Email/password login works
-- [ ] Google login works
-- [ ] Authenticated API can read `sub`
+- [ ] Unauthenticated protected request returns `401` — to verify after deploy
+- [ ] Email/password login works — to verify after deploy
+- [ ] Google login works — blocked on Google OAuth client setup
+- [ ] Authenticated API can read `sub` — to verify after deploy (local backend test already
+      covers the claims-extraction logic in isolation)
+
+### Phase 2 blockers
+
+- **Google OAuth client**: not yet created. Exact redirect URI to register in Google Cloud
+  Console (confirmed from the synthesized template, domain prefix
+  `memory-layer-auth-907297`):
+  ```text
+  https://memory-layer-auth-907297.auth.ap-south-1.amazoncognito.com/oauth2/idpresponse
+  ```
+  See setup steps in the Phase 2 plan message. Once you have the Client ID/Secret:
+  1. `aws secretsmanager create-secret --name memory-layer/google-oauth-client-secret --secret-string '<secret>' --region ap-south-1`
+  2. Deploy with `GOOGLE_OAUTH_CLIENT_ID=<client-id> cdk deploy MemoryLayerAuthStack MemoryLayerApiStack MemoryLayerFrontendStack`
+- Local implementation, backend/CDK tests, and `cdk synth` (all three stacks) are complete
+  and passing. Nothing has been deployed for Phase 2 yet.
 
 ### Phase 2 exit condition
 
