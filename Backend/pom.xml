@@ -17,7 +17,13 @@
     <aws-serverless-java-container.version>2.1.3</aws-serverless-java-container.version>
     <aws-lambda-java-core.version>1.2.3</aws-lambda-java-core.version>
     <aws-lambda-java-events.version>3.13.0</aws-lambda-java-events.version>
-    <aws-sdk.version>2.34.0</aws-sdk.version>
+    <!-- Bumped for Phase 5: bedrockagentruntime's Retrieve response model gained typed
+         AudioSegment/VideoSegment content fields (RetrievalResultContent.audio()/.video())
+         only in a newer SDK line — 2.34.0's RetrievalResultContentType enum doesn't even
+         define AUDIO/VIDEO, confirmed via javap against the real jar. Bumping the whole BOM
+         (rather than pinning just bedrockagentruntime to a newer version) avoids mixing
+         sdk-core/http-client versions across modules within the same shaded jar. -->
+    <aws-sdk.version>2.55.0</aws-sdk.version>
     <junit.version>5.10.3</junit.version>
   </properties>
 
@@ -95,6 +101,12 @@
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>bedrockagent</artifactId>
+    </dependency>
+
+    <!-- Phase 5: Retrieve calls from POST /api/v1/search. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>bedrockagentruntime</artifactId>
     </dependency>
 
     <!-- Lighter/faster-initializing HTTP client than the Apache default — matters for

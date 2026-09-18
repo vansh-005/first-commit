@@ -1,40 +1,33 @@
-import { getMe } from '@/api/client'
-import { Button } from '@/components/ui/button'
-import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from 'react-oidc-context'
-import { buildCognitoLogoutUrl } from '@/auth/oidcConfig'
 
 /**
- * Minimal authenticated placeholder — the real Home/Library workspace is Phase 3+. This
- * exists to prove login, logout, and authenticated API calls all work end to end.
+ * Docs/FRONTEND.md §12. Now rendered inside AppShell (Section 6), so this owns page content
+ * only, not the page chrome — navigation, search, and the user menu all live in the shared
+ * shell. Kept intentionally light: the global search bar in the top bar is the primary
+ * interaction, not a second search box duplicated here.
  */
 export function HomePage() {
   const auth = useAuth()
-  const [me, setMe] = useState<string | null>(null)
-  const [meError, setMeError] = useState<string | null>(null)
-
-  useEffect(() => {
-    getMe()
-      .then((response) => setMe(response.userId))
-      .catch((error: Error) => setMeError(error.message))
-  }, [])
-
-  function handleLogout() {
-    auth.removeUser().finally(() => {
-      window.location.href = buildCognitoLogoutUrl()
-    })
-  }
+  const firstName = auth.user?.profile.given_name ?? auth.user?.profile.name ?? null
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-      <h1 className="text-2xl font-semibold text-text-primary">
-        Signed in as {auth.user?.profile.email ?? 'unknown'}
-      </h1>
-      {me && <p className="text-sm text-text-secondary">Authenticated userId (sub): {me}</p>}
-      {meError && <p className="text-sm text-error">Could not verify API access: {meError}</p>}
-      <Button variant="secondary" onClick={handleLogout}>
-        Log out
-      </Button>
-    </main>
+    <div className="flex flex-col gap-8 p-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-text-primary">
+          {firstName ? `Welcome back, ${firstName}` : 'Welcome back'}
+        </h1>
+        <p className="mt-1 text-sm text-text-secondary">
+          Use the search bar above to find anything you've uploaded, or jump into your library.
+        </p>
+      </div>
+
+      <Link
+        to="/app/library"
+        className="w-fit rounded-[var(--radius-md)] border border-border bg-surface-raised px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:border-border-strong"
+      >
+        Go to Library
+      </Link>
+    </div>
   )
 }

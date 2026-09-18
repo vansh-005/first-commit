@@ -35,11 +35,13 @@ public class InfraApp {
         DataStack dataStack = new DataStack(app, "MemoryLayerDataStack",
                 StackProps.builder().env(env).build(), AMPLIFY_ORIGIN);
 
-        ApiStack apiStack = new ApiStack(app, "MemoryLayerApiStack",
-                StackProps.builder().env(env).build(), authStack, dataStack);
-
-        new IngestionStack(app, "MemoryLayerIngestionStack",
+        // Constructed before ApiStack (as of Phase 5) — ApiStack's /search route needs a
+        // reference to the Knowledge Base this stack creates.
+        IngestionStack ingestionStack = new IngestionStack(app, "MemoryLayerIngestionStack",
                 StackProps.builder().env(env).build(), dataStack);
+
+        ApiStack apiStack = new ApiStack(app, "MemoryLayerApiStack",
+                StackProps.builder().env(env).build(), authStack, dataStack, ingestionStack);
 
         new FrontendStack(app, "MemoryLayerFrontendStack",
                 StackProps.builder().env(env).build(),

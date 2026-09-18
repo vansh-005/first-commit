@@ -11,6 +11,8 @@ import software.amazon.awscdk.services.apigatewayv2.CfnRoute;
 import software.amazon.awscdk.services.apigatewayv2.CorsHttpMethod;
 import software.amazon.awscdk.services.apigatewayv2.CorsPreflightOptions;
 import software.amazon.awscdk.services.apigatewayv2.HttpApi;
+import software.amazon.awscdk.services.iam.Effect;
+import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.iam.ServicePrincipal;
 import software.amazon.awscdk.services.lambda.Alias;
 import software.amazon.awscdk.services.lambda.Architecture;
@@ -29,6 +31,9 @@ import java.util.List;
  * Phase 1 added a single public health-check route. Phase 2 added a Cognito JWT authorizer
  * and a protected diagnostic route (`/api/v1/me`). Phase 3 adds the upload/document routes
  * from Docs/API.md §10/15-17, all behind the same authorizer + `memory-api/access` scope.
+ * Phase 5 adds semantic search (`/api/v1/search`, Docs/API.md §18), which needs a reference to
+ * the Knowledge Base created in {@code IngestionStack} — hence the added constructor
+ * parameter and {@code InfraApp} now constructing that stack before this one.
  *
  * <p>The Lambda integration/route are wired with the stable L1 constructs
  * ({@code CfnIntegration}/{@code CfnRoute}) rather than the {@code HttpLambdaIntegration} L2:
@@ -46,7 +51,7 @@ public class ApiStack extends Stack {
     private final CfnAuthorizer authorizer;
 
     public ApiStack(final Construct scope, final String id, final StackProps props,
-                     final AuthStack authStack, final DataStack dataStack) {
+                     final AuthStack authStack, final DataStack dataStack, final IngestionStack ingestionStack) {
         super(scope, id, props);
 
         LogGroup logGroup = LogGroup.Builder.create(this, "ApiFunctionLogGroup")
@@ -66,7 +71,8 @@ public class ApiStack extends Stack {
                 .logGroup(logGroup)
                 .environment(java.util.Map.of(
                         "TABLE_NAME", dataStack.getTable().getTableName(),
-                        "UPLOADS_BUCKET_NAME", dataStack.getUploadsBucket().getBucketName()))
+                        "UPLOADS_BUCKET_NAME", dataStack.getUploadsBucket().getBucketName(),
+                        "KNOWLEDGE_BASE_ID", ingestionStack.getKnowledgeBaseId()))
                 // SnapStart only restores from a published version, never $LATEST.
                 .snapStart(SnapStartConf.ON_PUBLISHED_VERSIONS)
                 .build();
@@ -76,6 +82,16 @@ public class ApiStack extends Stack {
         // which is the only thing that ever decides the actual key within that prefix.
         dataStack.getUploadsBucket().grantPut(apiFunction, "users/*");
         dataStack.getUploadsBucket().grantRead(apiFunction, "users/*");
+        // Phase 5: POST /api/v1/search's Retrieve calls. Confirmed against the bare Knowledge
+        // Base ARN (not a sub-resource), matching the Phase 4 StartIngestionJob/GetIngestionJob
+        // precedent. The IAM action namespace is "bedrock:", not "bedrock-agent-runtime:" (the
+        // SDK/client name) — confirmed live via the exact AccessDeniedException wording after
+        // deploying with the SDK-namespaced action, which only ever names "bedrock:Retrieve".
+        apiFunction.addToRolePolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of("bedrock:Retrieve"))
+                .resources(List.of(ingestionStack.getKnowledgeBaseArn()))
+                .build());
 
         Alias liveAlias = Alias.Builder.create(this, "ApiFunctionLiveAlias")
                 .aliasName("live")
@@ -127,6 +143,9 @@ public class ApiStack extends Stack {
         addProtectedRoute("DocumentsList", "GET", "/api/v1/documents");
         addProtectedRoute("DocumentGet", "GET", "/api/v1/documents/{documentId}");
         addProtectedRoute("DocumentAccessUrl", "GET", "/api/v1/documents/{documentId}/access-url");
+
+        // Phase 5: semantic search (Docs/API.md §18) — Retrieve only, never RetrieveAndGenerate.
+        addProtectedRoute("Search", "POST", "/api/v1/search");
 
         liveAlias.addPermission("ApiGatewayInvokeHealth", Permission.builder()
                 .principal(new ServicePrincipal("apigateway.amazonaws.com"))

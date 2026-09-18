@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
@@ -42,5 +43,14 @@ public class AwsClientsConfig {
     @Bean
     public S3Presigner s3Presigner() {
         return S3Presigner.builder().region(region()).build();
+    }
+
+    /** Phase 5: POST /api/v1/search's Retrieve calls. */
+    @Bean
+    public BedrockAgentRuntimeClient bedrockAgentRuntimeClient() {
+        return BedrockAgentRuntimeClient.builder()
+                .region(region())
+                .httpClientBuilder(UrlConnectionHttpClient.builder())
+                .build();
     }
 }

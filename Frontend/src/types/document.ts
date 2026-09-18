@@ -50,3 +50,40 @@ export interface AccessUrlResponse {
   url: string
   expiresAt: string
 }
+
+/** Docs/API.md §18-19. */
+export interface SearchRequest {
+  query: string
+  limit?: number
+  filters?: {
+    mediaCategories?: MediaCategory[]
+  }
+}
+
+export interface MediaTimestamp {
+  startMs: number
+  endMs: number
+}
+
+export interface SearchResultDocument {
+  documentId: string
+  fileName: string
+  mediaCategory: MediaCategory
+  mimeType: string
+}
+
+export interface SearchResultMatch {
+  score: number
+  snippet: string
+  mediaTimestamp: MediaTimestamp | null
+}
+
+export interface SearchResult {
+  document: SearchResultDocument
+  match: SearchResultMatch
+}
+
+export interface SearchResponse {
+  query: string
+  results: SearchResult[]
+}

@@ -5,6 +5,8 @@ import type {
   DocumentSummary,
   MediaCategory,
   DocumentStatus,
+  SearchRequest,
+  SearchResponse,
   UploadFileRequest,
   UploadResponse,
 } from '@/types/document'
@@ -101,6 +103,16 @@ export async function getDocument(documentId: string): Promise<DocumentSummary> 
 export async function getAccessUrl(documentId: string): Promise<AccessUrlResponse> {
   const response = await authorizedFetch(`/api/v1/documents/${encodeURIComponent(documentId)}/access-url`)
   return (await response.json()) as AccessUrlResponse
+}
+
+/** Docs/API.md §18. Uses Retrieve server-side — never RetrieveAndGenerate. */
+export async function searchDocuments(request: SearchRequest): Promise<SearchResponse> {
+  const response = await authorizedFetch('/api/v1/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  return (await response.json()) as SearchResponse
 }
 
 /**

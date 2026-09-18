@@ -39,6 +39,18 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(SearchUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleSearchUnavailable(SearchUnavailableException ex) {
+        HttpStatus status = ex.isRetryable() ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.BAD_GATEWAY;
+        String code = ex.isRetryable() ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE";
+        ErrorResponse body = new ErrorResponse(new ErrorResponse.ErrorBody(
+                code,
+                ex.getMessage(),
+                UUID.randomUUID().toString(),
+                ex.isRetryable()));
+        return ResponseEntity.status(status).body(body);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
         String requestId = UUID.randomUUID().toString();

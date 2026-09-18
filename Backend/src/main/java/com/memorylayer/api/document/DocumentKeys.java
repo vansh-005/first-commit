@@ -11,6 +11,10 @@ public final class DocumentKeys {
     private static final Pattern SOURCE_KEY_PATTERN =
             Pattern.compile("^users/([^/]+)/documents/([^/]+)/original/.+$");
 
+    // Mirrors KbStagingService's layout: kb/{multimodal|text}/<documentId>/<fileName>.
+    private static final Pattern STAGING_KEY_PATTERN =
+            Pattern.compile("^kb/(?:multimodal|text)/([^/]+)/.+$");
+
     private DocumentKeys() {
     }
 
@@ -39,5 +43,18 @@ public final class DocumentKeys {
             return null;
         }
         return new ParsedSourceKey(matcher.group(1), matcher.group(2));
+    }
+
+    /** Recovers {@code documentId} from a Knowledge Base staging key — the fallback path for
+     * search result mapping when a Bedrock retrieval result's {@code documentId} metadata
+     * attribute is unexpectedly absent (it's always written by the ingestion coordinator, so
+     * this should be rare, but a citation must never silently point nowhere). Returns
+     * {@code null} if the key doesn't match the expected staging layout. */
+    public static String parseStagingDocumentId(String s3Key) {
+        Matcher matcher = STAGING_KEY_PATTERN.matcher(s3Key);
+        if (!matcher.matches()) {
+            return null;
+        }
+        return matcher.group(1);
     }
 }

@@ -22,7 +22,10 @@ class ApiStackTest {
                 "https://main.example.amplifyapp.com", "test-google-client-id");
         DataStack dataStack = new DataStack(app, "TestDataStack", StackProps.builder().env(env).build(),
                 "https://main.example.amplifyapp.com");
-        ApiStack stack = new ApiStack(app, "TestApiStack", StackProps.builder().env(env).build(), authStack, dataStack);
+        IngestionStack ingestionStack = new IngestionStack(app, "TestIngestionStack",
+                StackProps.builder().env(env).build(), dataStack);
+        ApiStack stack = new ApiStack(app, "TestApiStack", StackProps.builder().env(env).build(),
+                authStack, dataStack, ingestionStack);
         Template template = Template.fromStack(stack);
 
         template.hasResourceProperties("AWS::Lambda::Function", Map.of(
@@ -40,7 +43,8 @@ class ApiStackTest {
                 "POST /api/v1/uploads",
                 "GET /api/v1/documents",
                 "GET /api/v1/documents/{documentId}",
-                "GET /api/v1/documents/{documentId}/access-url")) {
+                "GET /api/v1/documents/{documentId}/access-url",
+                "POST /api/v1/search")) {
             template.hasResourceProperties("AWS::ApiGatewayV2::Route", Match.objectLike(Map.of(
                     "RouteKey", routeKey,
                     "AuthorizationType", "JWT",
@@ -64,6 +68,18 @@ class ApiStackTest {
                 "PolicyDocument", Match.objectLike(Map.of(
                         "Statement", Match.arrayWith(List.of(Match.objectLike(Map.of(
                                 "Action", Match.arrayWith(List.of("dynamodb:Query"))
+                        ))))
+                ))
+        )));
+
+        // Phase 5: the Lambda role must be able to call Retrieve, scoped to the Knowledge
+        // Base ARN — otherwise /search would 403 downstream at call time. The IAM action
+        // namespace is "bedrock:", not "bedrock-agent-runtime:" (the SDK/client name) —
+        // confirmed live via the exact AccessDeniedException wording.
+        template.hasResourceProperties("AWS::IAM::Policy", Match.objectLike(Map.of(
+                "PolicyDocument", Match.objectLike(Map.of(
+                        "Statement", Match.arrayWith(List.of(Match.objectLike(Map.of(
+                                "Action", "bedrock:Retrieve"
                         ))))
                 ))
         )));

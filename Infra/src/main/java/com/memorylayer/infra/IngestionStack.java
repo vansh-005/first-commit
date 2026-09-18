@@ -54,6 +54,9 @@ import java.util.Map;
  */
 public class IngestionStack extends Stack {
 
+    private String knowledgeBaseId;
+    private String knowledgeBaseArn;
+
     public IngestionStack(final Construct scope, final String id, final StackProps props, final DataStack dataStack) {
         super(scope, id, props);
 
@@ -220,6 +223,9 @@ public class IngestionStack extends Stack {
                         .build())
                 .build();
 
+        this.knowledgeBaseId = knowledgeBase.getAttrKnowledgeBaseId();
+        this.knowledgeBaseArn = knowledgeBase.getAttrKnowledgeBaseArn();
+
         // Explicit dependency — see the comment above kbPolicy for why this is required, not
         // just defensive: without it, CloudFormation has no ordering constraint forcing the
         // permissions to exist before Bedrock validates them during KB creation.
@@ -363,5 +369,14 @@ public class IngestionStack extends Stack {
                 .build();
 
         CfnOutput.Builder.create(this, "KnowledgeBaseId").value(knowledgeBase.getAttrKnowledgeBaseId()).build();
+    }
+
+    /** Phase 5: consumed by ApiStack for POST /api/v1/search's Retrieve calls. */
+    public String getKnowledgeBaseId() {
+        return knowledgeBaseId;
+    }
+
+    public String getKnowledgeBaseArn() {
+        return knowledgeBaseArn;
     }
 }

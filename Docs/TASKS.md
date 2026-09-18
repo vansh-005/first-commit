@@ -399,7 +399,7 @@ SK = JOB#<jobId>
 Real files uploaded through the actual deployed API (not synthetic/degenerate test data), full pipeline exercised end to end: `UPLOAD_PENDING` -> `UPLOADED` -> `INDEXING` -> `READY`, each confirmed via DynamoDB, then confirmed retrievable via a direct `Retrieve` call with correct `userId`/`documentId`/`mediaCategory`/`fileName` metadata.
 
 - [x] PDF becomes searchable — real PDF, `READY`, retrieved with correct text content
-- [x] Image becomes searchable — **real JPEG and PNG both confirmed**, `READY`, retrieved with an accurate BDA-generated image description. The earlier spike's synthetic-image failures turned out to be a real, now-fixed bug: `parsingModality` must be explicitly set to `MULTIMODAL` on the data source's BDA config, or BDA silently runs in a text/document-only mode and rejects every image as "file format was not supported" — see "Deployment-time fixes" below
+- [x] Image becomes searchable — **real JPEG and PNG both confirmed**, `READY`, retrieved with an accurate BDA-generated image description. The earlier spike's synthetic-image failures turned out to be a real, now-fixed bug: `parsingModality` must be explicitly set to `MULTIMODAL` on the data source's BDA config, or BDA silently runs in a text/document-only mode and rejects every image as "file format was not supported" — see "Deployment-time fixes" below. Full trace re-confirmed independently for one real JPEG (`photo_6106897192711820494_y.jpg`, documentId `de56b210-562e-434c-9992-87ef850a9a08`, ingestion job `WTYEPVGEML`): job `COMPLETE` (1 new document indexed, 0 failed) → DynamoDB `READY` → `Retrieve` by `documentId` returns `content.type=IMAGE` (not text — confirms the SDK's typed image-content field is real, not assumed) with a correct, non-trivial `x-amz-bedrock-kb-description` (an OCR-quality read of handwritten notes) and exact `userId`/`documentId`/`fileName`/`mediaCategory` metadata → a real semantic query with no `documentId` filter ranks it first (score 0.82) well above unrelated documents (~0.56) → filtering the same query to a *different* user's `userId` returns zero occurrences of this document, confirming tenant isolation holds at the KB retrieval layer itself, not just in the API layer
 - [x] Audio and video both become searchable — a synthetic pure-tone WAV was correctly *rejected* by BDA ("no text content found in the files" — expected, not a bug, since there's no speech to transcribe); a **real speech recording** (Windows TTS) was correctly transcribed and retrieved, matching the spoken content exactly. A real MP4 (H.264 test pattern) was retrieved with an accurate BDA-generated video summary.
 - [x] Text document path works — real Markdown file, `READY`, retrieved with correct content
 - [ ] Failed processing is visible in UI — `FileCard` already renders a `FAILED` status label (Phase 3); not exercised against a real failed document in the browser this pass (only verified via DynamoDB/API)
@@ -433,35 +433,122 @@ upload -> async processing -> READY
 
 # Phase 5 — Semantic search
 
+Implemented, deployed, and verified end-to-end against the real Knowledge Base
+(2026-09-18/19). `mvn test` (Backend + Infra), `npm test`/`npm run build`/`npm run lint`
+(Frontend), and `cdk synth` all pass.
+
+## Deployment
+
+`MemoryLayerIngestionStack` (additive `Outputs` only, exporting `KnowledgeBaseArn`/`Id` for
+`ApiStack` to consume) and `MemoryLayerApiStack` (new `/search` route, IAM statement, env var,
+new Lambda version) were deployed. `MemoryLayerDataStack` and `MemoryLayerFrontendStack` showed
+no `cdk diff` and were not deployed — Amplify redeploys the frontend from the `main` branch push,
+not from `cdk deploy`.
+
+**Deployment incident (caused and fixed in this pass):** `cdk deploy MemoryLayerIngestionStack
+MemoryLayerApiStack` auto-included `MemoryLayerAuthStack` as a dependency stack. `GOOGLE_OAUTH_CLIENT_ID`
+was not set in the deploying shell, so `InfraApp` fell back to its `placeholder-google-client-id`
+default, which got deployed to the real Cognito Google identity provider — breaking Google
+Sign-In for a few minutes. Caught immediately via `describe-identity-provider`, and fixed by
+redeploying `MemoryLayerAuthStack` alone with the correct env var (the real client ID had been
+captured in an earlier `cdk diff` in this same session). Confirmed restored. **Lesson for future
+deploys of this stack:** `GOOGLE_OAUTH_CLIENT_ID` must be set in the environment before *any*
+`cdk deploy`/`cdk diff` that could touch `AuthStack`, including indirectly via dependency
+inclusion — verify with `cdk diff MemoryLayerAuthStack` shows no changes before deploying.
+
+**Two real bugs found and fixed via live verification** (not caught by unit tests):
+1. **Stale deployed jar** — the first `ApiStack` deploy packaged whatever was already sitting at
+   `Backend/target/backend.jar`, built before Phase 5's backend code existed (`SearchController`
+   confirmed absent via `unzip -l`). `POST /api/v1/search` 404'd (fell through to Spring's static
+   resource handler) despite the API Gateway route and IAM being wired correctly. Fixed by
+   `mvn clean package` before every `ApiStack` deploy going forward — CDK's `Code.fromAsset`
+   does not rebuild the jar itself.
+2. **Wrong IAM action namespace** — `ApiStack` granted `bedrock-agent-runtime:Retrieve` (the
+   SDK/client name), but the real required IAM action — confirmed via the live
+   `AccessDeniedException`'s exact wording — is `bedrock:Retrieve`. Same category of gotcha as
+   Phase 4's `StartIngestionJob`/`GetIngestionJob` IAM fix. Fixed in `ApiStack.java` and
+   `ApiStackTest.java`.
+3. **Media timestamps silently always null** — `SearchResultMapper.asMillis` used
+   `Document.unwrap() instanceof Number`, but verified live (and via `javap` against the real
+   SDK jar) that `NumberDocument.unwrap()` always returns the number's `String` form via
+   `SdkNumber.stringValue()`, never a `Number`. The code fell through to its `String` branch,
+   where `Long.parseLong("6360.0")` throws on the decimal point and was silently swallowed. Real
+   Bedrock chunk timestamps are JSON floats (`0.0`, `6360.0`), so every real audio/video result's
+   `mediaTimestamp` was dropped. Fixed by switching to `Document`'s typed accessors
+   (`isNumber()`/`asNumber().longValue()`, which correctly parses decimal strings via
+   `BigDecimal` internally). Added a regression test
+   (`resolvesMediaTimestampWhenTheRealKbSendsDecimalFormattedMillis`) using
+   `Document.fromNumber(0.0)` — the existing tests only used integer values and never exercised
+   this path.
+
+As part of this phase, also built the shared authenticated `AppShell` (resizable/collapsible
+sidebar, top bar with global search, Home/Library/Search/Ask navigation) per the approved plan's
+first amendment, migrating `/app`, `/app/library`, and `/app/search` into it; `Ask` remains a
+placeholder route.
+
 ## Backend
 
-- [ ] Implement `POST /api/v1/search`
-- [ ] Call Bedrock Knowledge Base `Retrieve`
-- [ ] Inject `userId = JWT.sub` metadata filter
-- [ ] Support optional media-category filter
-- [ ] Convert chunk-level results to document-centric results
-- [ ] Resolve document metadata from DynamoDB
-- [ ] Return snippets
-- [ ] Return media timestamps when available
+- [x] Implement `POST /api/v1/search` — `SearchController`/`SearchService`
+- [x] Call Bedrock Knowledge Base `Retrieve` — never `RetrieveAndGenerate`
+- [x] Inject `userId = JWT.sub` metadata filter — server-side only, via `AuthenticatedUserResolver`; client-supplied identifiers are ignored, not just unused
+- [x] Support optional media-category filter — additive `in`/`equalsValue` clause `AND`ed with the tenant filter, never replacing it
+- [x] Convert chunk-level results to document-centric results — oversample (`limit * 3`, capped 50), dedupe to the first (highest-scoring) chunk per `documentId`, `SearchResultMapper.dedupeAndRank`
+- [x] Resolve document metadata from DynamoDB — via existing `DocumentRepository`, skipping any result whose document can't be resolved (e.g. deleted after indexing)
+- [x] Return snippets — priority order per approved amendment #2: `content.text()` → BDA `audio().transcription()`/`video().summary()` → `x-amz-bedrock-kb-description` metadata → safe generic/file-type fallback (no undocumented SDK fields assumed)
+- [x] Return media timestamps when available — defensively checks both `x-amz-bedrock-kb-chunk-start/end-time-in-millis` and `_media_start_time_ms`/`_media_end_time_ms` per approved amendment #3; only set when both start and end resolve
+- [x] Map KB staging references back to the original document — primary: `documentId` from Bedrock's returned chunk metadata (written by the Phase 4 ingestion sidecar); fallback: parse the staging S3 key (`kb/multimodal|text/<documentId>/...`) via `DocumentKeys.parseStagingDocumentId`. Live-verified: no `s3://` URI or bucket name appears anywhere in real `/api/v1/search` responses
 
 ## Frontend
 
-- [ ] Search input
-- [ ] Search loading state
-- [ ] Search result cards
-- [ ] File type / source display
-- [ ] Relevant snippet
-- [ ] Open source file
-- [ ] Seek to timestamp for media if available
+- [x] Search input — `TopBar`'s global search box, navigates to `/app/search?q=...` only (no duplicated search logic per page)
+- [x] Search loading state — `SearchPage`
+- [x] Search result cards — `SearchResultCard`
+- [x] File type / source display — media category + filename shown on each card
+- [x] Relevant snippet — shown per Docs/FRONTEND.md §15
+- [x] Open source file — via `/documents/{id}/access-url`, same freshly-signed-URL pattern as `FileCard`. Live-verified: two calls return distinct signatures/expiry, and the returned URL was downloaded directly — 200 OK, correct `image/jpeg` content-type, correct byte size (235574, matching DynamoDB), valid JPEG magic bytes
+- [x] Seek to timestamp for media if available — timestamp range rendered as text on the card when present (no scoped media player yet — deferred, no timestamp-linked playback exists in the app currently). Live-verified after the `asMillis` fix: real audio/video results return correct `{startMs, endMs}`
+- [x] Raw vector scores never shown to the user (Docs/FRONTEND.md §15) — covered by tests on both `SearchPage` and `SearchResultCard`
 
 ## Security
 
-- [ ] Confirm client cannot alter tenant filter
-- [ ] Confirm User A searches cannot retrieve User B content
+- [x] Confirm client cannot alter tenant filter — `SearchControllerTest` asserts a client-supplied `userId`/`tenantId` in the request body is ignored. **Live-verified**: authenticated as user `61d34d4a...`, sent a request body with `userId`/`tenantId` set to a *different* real user (`d1d3cdda...`) — results stayed scoped to the authenticated user's own 2 documents only, none of the other user's 10 documents leaked
+- [x] Confirm User A searches cannot retrieve User B content — **live-verified twice**: (1) directly against the Knowledge Base, filtering the exact query that surfaces user 61d34d4a's JPEG by user d1d3cdda's `userId` instead returns zero occurrences of that document; (2) through the deployed API (see injection test above)
 
 ## Cost
 
-- [ ] Search path uses `Retrieve`, not `RetrieveAndGenerate`
+- [x] Search path uses `Retrieve`, not `RetrieveAndGenerate`
+
+## Tests
+
+- [x] `SearchResultMapperTest` (15 tests) — dedup/limit/snippet-priority/timestamp-forms/documentId-extraction, incl. a live-bug regression test for decimal-formatted millis
+- [x] `SearchControllerTest` (4 tests) — tenant-filter injection, media-category filter, error mapping
+- [x] `ApiStackTest` — new `POST /api/v1/search` route and `bedrock:Retrieve` IAM statement
+- [x] `SearchPage.test.tsx` (6 tests) — `q`-param-driven search, empty/error states, category-filter re-query, no raw score rendered
+- [x] `SearchResultCard.test.tsx` (3 tests) — open-file action, timestamp formatting, no raw score rendered
+
+## Live verification against the real deployed API/Knowledge Base (2026-09-18/19)
+
+All calls made directly against the deployed `memory-layer-api:live` Lambda alias with a
+synthetic-but-faithful API Gateway v2.0 JWT-authorizer event (no browser automation tool is
+available in this environment — see the browser-refresh note below for what that means for
+frontend-only checks).
+
+- [x] JPEG search — query `"Tata Motors corporate entrepreneurship strategy notes"` as the JPEG's owning user: the JPEG (`photo_6106897192711820494_y.jpg`) ranks #1 at score 0.82 with its real BDA-generated snippet ("...Tata Motars can nenew innovat...")
+- [x] PDF/Markdown/Audio/Video content search — query `"giraffe umbrella cactus"` (the shared Phase 4 test keyword) correctly surfaces `test-speech.wav` (AUDIO, transcription snippet + `{startMs:0, endMs:6360}`), `test-notes.md` (DOCUMENT, exact text), `test-doc.pdf` (DOCUMENT, exact text), and `test-image.*` (IMAGE, BDA description) — and a `"television test pattern color bars broadcast"` query correctly surfaces `test-video.mp4` (VIDEO, summary snippet + timestamp) at the top 3 results
+- [x] Category filters alter results — the same query filtered to `mediaCategories: ["AUDIO"]` returns only the 2 audio documents; filtered to `["DOCUMENT"]` returns only the 5 PDF/MD documents, both excluding the otherwise-present image/video/audio results
+- [x] Unrelated query produces a sensible low-relevance result — `"quantum chromodynamics lagrangian renormalization"` returns results scored ~0.50, visibly lower than any on-topic query (~0.53–0.90); there is no hard relevance cutoff configured (a pure-KNN system always returns its k nearest vectors), which is consistent with the approved plan — a minimum-score threshold was never specified as a requirement
+- [x] Clicking Open — see the frontend checklist entry above; verified via direct download of a freshly-issued presigned URL
+- [x] No staging S3 URI ever exposed — grepped every captured live response for `s3://`/bucket names; none found (one false-positive substring match was the test markdown file's own literal text content mentioning "kb/text/", not an actual leaked path)
+- [x] userId/tenantId injection cannot affect isolation — see the Security checklist above
+- [~] Search survives a browser refresh at `/app/search?q=...` — verified structurally, not via a driven browser (no browser-automation tool available in this environment): `FrontendStack`'s Amplify `CustomRuleProperty` rewrites any non-asset path to `/index.html` with a 200 (so a hard refresh doesn't 404), and `SearchPage.test.tsx` mounts fresh at that exact URL shape and correctly re-runs the search from the `q` param. Recommend a manual one-time browser check after the next Amplify deploy.
+- [x] CloudWatch checked for errors — all `ERROR`-level log lines in `memory-layer-api` during the verification window are attributable to the two bugs above, fixed before final verification; zero errors in either Phase 4 Lambda (`memory-layer-ingestion-coordinator`, `memory-layer-status-reconciler`) during the same window
+- [x] No Phase 4 regression — `memory-layer-status-reconciler` confirmed still running once/minute with no errors; the JPEG's DynamoDB `status`/`updatedAt` unchanged since its original Phase 4 ingestion
+
+**Known test-data note (not a Phase 5 defect):** one stray `UPLOAD_PENDING` document
+(`2b709b0e-92d2-410f-9e90-c5530ef598e6`, user `d1d3cdda...`) was created while validating the
+direct-Lambda-invoke verification technique against the already-working `/api/v1/uploads` route.
+It will never progress (no file was actually uploaded to S3 for it) and is harmless, but the
+agent's shell session did not have permission to delete it — left for manual cleanup if desired.
 
 ### Phase 5 exit condition
 
@@ -472,6 +559,8 @@ Example query:
 ```
 
 returns the correct uploaded memory.
+
+- [x] Verified against the real deployed API/Knowledge Base — see live verification section above
 
 ---
 
