@@ -53,37 +53,52 @@ Do not start stretch features until this path works end-to-end.
 
 ## Backend
 
-- [ ] Initialize Java backend project
-- [ ] Add minimal Lambda handler structure
-- [ ] Implement `GET /api/v1/health`
-- [ ] Add structured logging
-- [ ] Add basic error response model
-- [ ] Add backend tests
+- [x] Initialize Java backend project
+- [x] Add minimal Lambda handler structure
+- [x] Implement `GET /api/v1/health`
+- [x] Add structured logging
+- [x] Add basic error response model
+- [x] Add backend tests
 
 ## Frontend
 
-- [ ] Initialize React/Vite frontend
-- [ ] Add environment-based API URL
-- [ ] Create minimal app shell
-- [ ] Add health-check integration for smoke testing
+- [x] Initialize React/Vite frontend
+- [x] Add environment-based API URL
+- [x] Create minimal app shell
+- [x] Add health-check integration for smoke testing (dev-only indicator, not part of product UI)
 
 ## Infrastructure
 
-- [ ] Initialize Java CDK project under `Infra/`
-- [ ] Define API Gateway HTTP API
-- [ ] Define Java Lambda
-- [ ] Enable Java SnapStart where supported/configured
-- [ ] Wire `/api/v1/health`
-- [ ] Add CloudWatch logs
-- [ ] `cdk synth` succeeds
-- [ ] Deploy first stack
+- [x] Initialize Java CDK project under `Infra/`
+- [x] Define API Gateway HTTP API
+- [x] Define Java Lambda
+- [x] Enable Java SnapStart where supported/configured
+- [x] Wire `/api/v1/health`
+- [x] Add CloudWatch logs
+- [x] `cdk synth` succeeds
+- [x] Deploy first stack — `MemoryLayerApiStack` deployed to `ap-south-1`
+      (`https://0sby0h3d1a.execute-api.ap-south-1.amazonaws.com`). `MemoryLayerFrontendStack`
+      intentionally not deployed yet (see blockers below).
 
 ## Verification
 
-- [ ] Public deployed frontend opens
-- [ ] Deployed `/api/v1/health` returns `200`
-- [ ] Frontend can reach deployed API
-- [ ] Commit baseline
+- [ ] Public deployed frontend opens — blocked on Amplify GitHub token setup + deploy
+- [x] Deployed `/api/v1/health` returns `200` — verified via curl (cold start ~3.2s with
+      SnapStart restore, warm ~0.26s); CloudWatch logs show clean SnapStart RESTORE_REPORT
+      and structured `RequestLog` lines with no errors
+- [ ] Frontend can reach deployed API — blocked on frontend deploy
+- [ ] Commit baseline — awaiting user approval to commit/push
+
+### Phase 1 blockers
+
+- **Amplify GitHub access token**: `FrontendStack` (Amplify Hosting via `CfnApp`/`CfnBranch`)
+  requires a GitHub App/PAT access token stored in Secrets Manager at
+  `memory-layer/amplify-github-token` before it can deploy. This is a manual, one-time,
+  outside-CDK step (see `Infra/src/main/java/com/memorylayer/infra/FrontendStack.java`
+  class Javadoc for exact steps). Not yet done.
+- **Frontend not deployed yet**: per project decision, only `MemoryLayerApiStack` is
+  deployed this pass. `MemoryLayerFrontendStack`, the frontend push, and full end-to-end
+  verification happen after the GitHub token is set up and the user approves.
 
 ### Phase 1 exit condition
 

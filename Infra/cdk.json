@@ -1,0 +1,11 @@
+{
+  "app": "mvn -e -q compile exec:java",
+  "watch": {
+    "include": ["src/**"],
+    "exclude": ["target/**", "cdk.out/**"]
+  },
+  "context": {
+    "@aws-cdk/core:newStyleStackSynthesis": true,
+    "@aws-cdk/aws-lambda:snapStartRequirePublish": true
+  }
+}

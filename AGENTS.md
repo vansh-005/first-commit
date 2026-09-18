@@ -78,7 +78,7 @@ Key decisions currently locked:
 - authentication: Amazon Cognito
 - social login: Google through Cognito federation
 - public API: API Gateway HTTP API
-- main backend: Java Lambda with SnapStart
+- main backend: Java (via Spring Boot) Lambda with SnapStart
 - application metadata: DynamoDB on-demand
 - user files: Amazon S3
 - async ingestion buffer: Amazon SQS + DLQ
@@ -290,7 +290,7 @@ One task should usually produce one coherent set of changes.
 
 ## Backend Rules
 
-Backend language: Java.
+Backend language: Java (Spring Boot).
 
 Prefer AWS SDK v2.
 
@@ -350,6 +350,7 @@ Update:
 - data model -> `Docs/DATA_MODEL.md`
 - API contract -> `Docs/API.md`
 - implementation progress -> `Docs/TASKS.md`
+- frontend -> `Docs/FRONTEND.md`
 
 Do not let code and docs intentionally diverge.
 

@@ -1,0 +1,68 @@
+/*
+ * Design tokens per Docs/FRONTEND.md Section 23.
+ * Dark is the default/primary theme; light is available via [data-theme="light"].
+ * Accent stays cool cobalt/blue-indigo per the FRONTEND.md accent-color rule —
+ * never peach/orange.
+ */
+
+:root,
+:root[data-theme="dark"] {
+  --background: #17181b;
+  --surface: #1c1d21;
+  --surface-raised: #232428;
+  --surface-muted: #202126;
+  --border: #2c2d33;
+  --border-strong: #3a3b42;
+
+  --text-primary: #f2f2f0;
+  --text-secondary: #a3a3a8;
+  --text-muted: #75767d;
+
+  --accent: #5b6cff;
+  --accent-hover: #7180ff;
+  --accent-subtle: rgba(91, 108, 255, 0.16);
+  --focus-ring: #7180ff;
+
+  --success: #4ade80;
+  --warning: #f5a524;
+  --error: #f87171;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.36);
+
+  --sidebar-width: 240px;
+  --sidebar-width-collapsed: 64px;
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --background: #f7f7f8;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-muted: #f0f0f2;
+  --border: #e2e2e6;
+  --border-strong: #cfcfd6;
+
+  --text-primary: #1a1b1e;
+  --text-secondary: #55565c;
+  --text-muted: #85868d;
+
+  --accent: #5b6cff;
+  --accent-hover: #4756e6;
+  --accent-subtle: rgba(91, 108, 255, 0.1);
+  --focus-ring: #5b6cff;
+
+  --success: #16a34a;
+  --warning: #b45309;
+  --error: #dc2626;
+
+  --shadow-sm: 0 1px 2px rgba(20, 20, 25, 0.06);
+  --shadow-md: 0 8px 24px rgba(20, 20, 25, 0.08);
+
+  color-scheme: light;
+}

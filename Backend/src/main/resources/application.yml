@@ -1,0 +1,9 @@
+spring:
+  main:
+    web-application-type: servlet
+  jackson:
+    default-property-inclusion: non_null
+
+logging:
+  level:
+    root: INFO
