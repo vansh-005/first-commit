@@ -1,10 +1,16 @@
 import { Button } from '@/components/ui/button'
 import { useEffect } from 'react'
 import { useAuth } from 'react-oidc-context'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 
 export function LoginPage() {
   const auth = useAuth()
+  const location = useLocation()
+
+  // ProtectedRoute sets this when it redirects an unauthenticated visit to /login; absent
+  // when the user landed here directly (e.g. typed the URL), in which case /app is the
+  // correct fallback.
+  const from = (location.state as { from?: string } | null)?.from
 
   // Cognito redirects back here with ?code=&state=; react-oidc-context finishes the token
   // exchange automatically, and this component just waits for isAuthenticated to flip.
@@ -16,7 +22,12 @@ export function LoginPage() {
   }, [auth.error])
 
   if (auth.isAuthenticated) {
-    return <Navigate to="/app" replace />
+    // auth.user.state round-trips whatever was passed to signinRedirect below, surviving
+    // the full redirect to Cognito and back — the only way to recover "from" once we're
+    // back on this page after a real OAuth round trip (router state doesn't survive a full
+    // page navigation away to Cognito's hosted domain and back).
+    const returnTo = (typeof auth.user?.state === 'string' && auth.user.state) || from || '/app'
+    return <Navigate to={returnTo} replace />
   }
 
   return (
@@ -27,7 +38,7 @@ export function LoginPage() {
         <Button
           size="lg"
           disabled={auth.isLoading}
-          onClick={() => auth.signinRedirect({ extraQueryParams: { identity_provider: 'Google' } })}
+          onClick={() => auth.signinRedirect({ extraQueryParams: { identity_provider: 'Google' }, state: from })}
         >
           Continue with Google
         </Button>
@@ -42,7 +53,7 @@ export function LoginPage() {
           variant="secondary"
           size="lg"
           disabled={auth.isLoading}
-          onClick={() => auth.signinRedirect()}
+          onClick={() => auth.signinRedirect({ state: from })}
         >
           Sign in with email
         </Button>
