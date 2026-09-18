@@ -1,8 +1,13 @@
 import { getAccessUrl } from '@/api/client'
+import { useIntersectionOnce } from '@/hooks/useIntersectionOnce'
 import type { DocumentSummary, DocumentStatus } from '@/types/document'
+import { useState } from 'react'
 
 const STATUS_LABEL: Record<DocumentStatus, string> = {
-  UPLOAD_PENDING: 'Uploading',
+  // Not "Uploading" — that's the active local XHR queue's job (see useFileUpload /
+  // UploadProgressList). A persisted UPLOAD_PENDING document (e.g. after a page reload)
+  // just hasn't been picked up by Phase 4's ingestion pipeline yet.
+  UPLOAD_PENDING: 'Awaiting processing',
   UPLOADED: 'Processing',
   INDEXING: 'Processing',
   READY: 'Ready',
@@ -12,6 +17,20 @@ const STATUS_LABEL: Record<DocumentStatus, string> = {
 /** Docs/FRONTEND.md §14. Opens the file via a freshly-signed access URL rather than any
  * stored/cached link — Docs/API.md never returns a permanent URL. */
 export function FileCard({ document }: { document: DocumentSummary }) {
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+  const [thumbnailFailed, setThumbnailFailed] = useState(false)
+
+  // Only fetches once the card actually scrolls into view, and only for images — a
+  // library with hundreds of files must not fire hundreds of access-url requests upfront.
+  // The bucket stays private throughout; only a short-lived presigned URL ever reaches
+  // the browser, never a raw S3 key.
+  const thumbnailRef = useIntersectionOnce<HTMLDivElement>(() => {
+    if (document.mediaCategory !== 'IMAGE') return
+    getAccessUrl(document.documentId)
+      .then((response) => setThumbnailUrl(response.url))
+      .catch(() => setThumbnailFailed(true))
+  })
+
   async function openFile() {
     try {
       const { url } = await getAccessUrl(document.documentId)
@@ -21,13 +40,24 @@ export function FileCard({ document }: { document: DocumentSummary }) {
     }
   }
 
+  const showThumbnail = document.mediaCategory === 'IMAGE' && thumbnailUrl && !thumbnailFailed
+
   return (
     <button
       onClick={openFile}
       className="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-4 text-left transition-colors hover:border-border-strong"
     >
-      <div className="flex h-24 items-center justify-center rounded-[var(--radius-md)] bg-surface-muted text-xs text-text-muted">
-        {document.mediaCategory}
+      <div ref={thumbnailRef} className="h-24 overflow-hidden rounded-[var(--radius-md)] bg-surface-muted">
+        {showThumbnail ? (
+          <img
+            src={thumbnailUrl}
+            alt={document.fileName}
+            className="h-full w-full object-cover"
+            onError={() => setThumbnailFailed(true)}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-xs text-text-muted">{document.mediaCategory}</div>
+        )}
       </div>
       <p className="truncate text-sm font-medium text-text-primary">{document.fileName}</p>
       <div className="flex items-center justify-between text-xs text-text-muted">
