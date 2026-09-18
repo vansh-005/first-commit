@@ -11,14 +11,33 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.UUID;
 
 /**
- * Safety-net handler so unmapped failures still return the Docs/API.md error envelope
- * instead of a stack trace. Endpoint-specific error codes are added alongside each endpoint
- * in later phases.
+ * Maps application exceptions to the Docs/API.md §6 error envelope. The generic
+ * {@code Exception} handler is the safety net for anything unmapped.
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(DocumentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentNotFound() {
+        ErrorResponse body = new ErrorResponse(new ErrorResponse.ErrorBody(
+                "DOCUMENT_NOT_FOUND",
+                "The requested document does not exist.",
+                UUID.randomUUID().toString(),
+                false));
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
+        ErrorResponse body = new ErrorResponse(new ErrorResponse.ErrorBody(
+                "VALIDATION_ERROR",
+                ex.getMessage(),
+                UUID.randomUUID().toString(),
+                false));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {

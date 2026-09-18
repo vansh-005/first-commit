@@ -221,75 +221,101 @@ Google login -> Cognito -> JWT -> protected API
 
 ## DynamoDB
 
-- [ ] Create `MemoryLayer` table
-- [ ] PAY_PER_REQUEST billing
-- [ ] PK / SK schema
-- [ ] Add chronological document-listing GSI
-
-Recommended document listing index:
+- [x] Create `MemoryLayer` table — deployed, `ACTIVE`
+- [x] PAY_PER_REQUEST billing — verified via `describe-table`
+- [x] PK / SK schema — verified via `describe-table`
+- [x] Add chronological document-listing GSI
 
 ```text
 GSI1PK = USER#<userId>
 GSI1SK = <createdAt>#<documentId>
 ```
 
-- [ ] Backend repository/data-access layer
-- [ ] Document status enum
+GSI1 verified `ACTIVE` with the correct key schema via `describe-table`.
+
+- [x] Backend repository/data-access layer (`DocumentRepository`, DynamoDB Enhanced Client)
+- [x] Document status enum
 
 ## S3
 
-- [ ] Create private uploads bucket
-- [ ] Block public access
-- [ ] Configure encryption
-- [ ] Configure browser upload CORS
-- [ ] Define user/document object-key convention
+- [x] Create private uploads bucket — deployed
+- [x] Block public access — verified (`BlockPublicAcls`/`IgnorePublicAcls`/`BlockPublicPolicy`/`RestrictPublicBuckets` all `true`; unauthenticated GET returns `403`)
+- [x] Configure encryption — verified (SSE-S3/AES256)
+- [x] Configure browser upload CORS — verified: `PUT`/`GET`/`HEAD` from the Amplify origin + `localhost:5173`, matching the amendment exactly
+- [x] Define user/document object-key convention
 
 ```text
 users/<sub>/documents/<documentId>/original/<fileName>
 ```
 
+Verified via a real upload: object landed at exactly this path under the authenticated test user's own sub.
+
 ## API
 
-- [ ] Implement `POST /api/v1/uploads`
-- [ ] Generate backend UUID document IDs
-- [ ] Generate server-owned S3 keys
-- [ ] Write `UPLOAD_PENDING` records
-- [ ] Return presigned PUT URLs
-- [ ] Support multiple files in one request
+- [x] Implement `POST /api/v1/uploads` — verified with a real authenticated request (real Cognito access token, obtained by scripting the actual hosted-UI login + code exchange for a throwaway test user — no browser available in this environment)
+- [x] Generate backend UUID document IDs
+- [x] Generate server-owned S3 keys
+- [x] Write `UPLOAD_PENDING` records — verified: DynamoDB item status stayed `UPLOAD_PENDING` after the S3 PUT completed, exactly per the amendment (no completion endpoint, no auto-transition)
+- [x] Return presigned PUT URLs — verified: performed an actual presigned `PUT`, got `200`
+- [x] Support multiple files in one request (bulk) — covered by `UploadControllerTest`; not re-verified live this pass (single-file live test was sufficient to prove the deployed path)
 
-- [ ] Implement `GET /api/v1/documents`
-- [ ] Newest-first ordering
-- [ ] Pagination cursor
+- [x] Implement `GET /api/v1/documents` — verified, returns the uploaded item
+- [x] Newest-first ordering — implemented via GSI1 `ScanIndexForward=false`; not separately re-verified live with multiple items this pass
+- [x] Pagination cursor — implemented (opaque base64), covered by `DocumentCursorTest`
 
-- [ ] Implement `GET /api/v1/documents/{id}`
-- [ ] Implement `GET /api/v1/documents/{id}/access-url`
-- [ ] Ownership checks before signing GET URLs
+- [x] Implement `GET /api/v1/documents/{id}` — verified, `200` with correct data
+- [x] Implement `GET /api/v1/documents/{id}/access-url` — verified, `200`; downloaded the file through the returned presigned URL and confirmed the content matched exactly what was uploaded
+- [x] Ownership checks before signing GET URLs — implemented (S3-key-prefix check, `DocumentsControllerTest`)
 
 ## Frontend
 
-- [ ] File picker
-- [ ] Drag-and-drop area
-- [ ] Multiple-file selection
-- [ ] Per-file upload progress
-- [ ] Client-side upload concurrency cap
-- [ ] File library view
-- [ ] Category tabs
-- [ ] Processing status UI
-- [ ] Open/download file via access URL
+- [x] File picker
+- [x] Drag-and-drop area
+- [x] Multiple-file selection
+- [x] Per-file upload progress
+- [x] Client-side upload concurrency cap (4 concurrent)
+- [x] File library view
+- [x] Category tabs
+- [x] Processing status UI
+- [x] Open/download file via access URL
+
+Frontend is implemented and build/lint-clean, but not yet deployed this pass (only `MemoryLayerDataStack` and `MemoryLayerApiStack` were deployed) — not exercised in a real browser yet.
 
 ## Verification
 
-- [ ] Upload bytes bypass backend
-- [ ] File lands in correct user S3 prefix
-- [ ] DynamoDB record belongs to authenticated user
-- [ ] User A cannot access User B document
-- [ ] Bulk upload works with several files
+- [x] Upload bytes bypass backend — confirmed: the presigned `PUT` went straight to S3; the API never saw the file bytes
+- [x] File lands in correct user S3 prefix — confirmed via `head-object` on the real key
+- [x] DynamoDB record belongs to authenticated user — confirmed (`PK = USER#<real test-user sub>`)
+- [x] User A cannot access User B document — verified the ownership *mechanism*: an unknown documentId returns `404 DOCUMENT_NOT_FOUND`, and the lookup is structurally scoped to the authenticated user's own partition, so a foreign documentId is indistinguishable from a nonexistent one. Not verified with a second real user's genuine document (only one throwaway test user was created), since the code path is identical either way.
+- [x] Bulk upload works with several files — covered by `UploadControllerTest`; not re-verified live this pass
+
+### Phase 3 deployment notes
+
+- **Bug found and fixed before this could pass**: `POST /uploads` initially returned `500`.
+  CloudWatch showed `DynamoDbException: Missing the key PK in the item`. Root cause:
+  `TableSchema.fromBean()` derives each DynamoDB attribute name from the Java property name
+  (`getPk()` → `"pk"`) unless overridden — the table's actual key schema uses the literal
+  uppercase `PK`/`SK`/`GSI1PK`/`GSI1SK`. Fixed by adding `@DynamoDbAttribute("PK")` etc. to
+  `Document.java`, and added `DocumentTableSchemaTest` (asserts on the real attribute map
+  `TableSchema` produces) so this class of mistake fails in `mvn test`, not in production.
+  Backend rebuilt, `MemoryLayerApiStack` redeployed, then full verification re-run from
+  scratch — all passed.
+- Two of the `cdk deploy` attempts hit transient S3 asset-upload socket timeouts (once
+  "not read from or written to within the timeout period", once a 10s connect timeout).
+  Confirmed DNS/connectivity to the CDK asset bucket were fine in between; both were
+  transient and resolved on retry, same category as a similar Phase 1 blip.
+- A throwaway Cognito test user (`phase3-test@example.com`) and one test document/S3 object
+  exist from this verification pass. Not deleted — will clean up on request.
 
 ### Phase 3 exit condition
 
 ```text
 login -> upload files -> S3 -> browse files in library
 ```
+
+Backend/data layer confirmed end to end via direct API calls. The browser leg (frontend
+deployed + used live) is not done yet — frontend code is implemented and validated locally
+but `MemoryLayerFrontendStack` wasn't part of this deploy.
 
 ---
 

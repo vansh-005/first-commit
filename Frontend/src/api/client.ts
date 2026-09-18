@@ -1,10 +1,37 @@
 import { userManager } from '@/auth/userManager'
+import type {
+  AccessUrlResponse,
+  DocumentsListResponse,
+  DocumentSummary,
+  MediaCategory,
+  DocumentStatus,
+  UploadFileRequest,
+  UploadResponse,
+} from '@/types/document'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined
 
 if (!API_BASE_URL) {
   // eslint-disable-next-line no-console
   console.warn('VITE_API_BASE_URL is not set; API calls will fail.')
+}
+
+async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const user = await userManager.getUser()
+  if (!user?.access_token) {
+    throw new Error('Not authenticated')
+  }
+  const response = await fetch(`${API_BASE_URL ?? ''}${path}`, {
+    ...init,
+    headers: {
+      ...init.headers,
+      Authorization: `Bearer ${user.access_token}`,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`${path} failed with status ${response.status}`)
+  }
+  return response
 }
 
 export interface HealthResponse {
@@ -30,15 +57,81 @@ export interface MeResponse {
  * is accepted end to end. Not a permanent product feature.
  */
 export async function getMe(): Promise<MeResponse> {
-  const user = await userManager.getUser()
-  if (!user?.access_token) {
-    throw new Error('Not authenticated')
-  }
-  const response = await fetch(`${API_BASE_URL ?? ''}/api/v1/me`, {
-    headers: { Authorization: `Bearer ${user.access_token}` },
-  })
-  if (!response.ok) {
-    throw new Error(`/me failed with status ${response.status}`)
-  }
+  const response = await authorizedFetch('/api/v1/me')
   return (await response.json()) as MeResponse
+}
+
+/** Docs/API.md §10. Single-file and bulk upload share this one endpoint. */
+export async function initUploads(files: UploadFileRequest[]): Promise<UploadResponse> {
+  const response = await authorizedFetch('/api/v1/uploads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files }),
+  })
+  return (await response.json()) as UploadResponse
+}
+
+export interface ListDocumentsParams {
+  limit?: number
+  cursor?: string
+  category?: MediaCategory
+  status?: DocumentStatus
+}
+
+/** Docs/API.md §15. */
+export async function listDocuments(params: ListDocumentsParams = {}): Promise<DocumentsListResponse> {
+  const query = new URLSearchParams()
+  if (params.limit) query.set('limit', String(params.limit))
+  if (params.cursor) query.set('cursor', params.cursor)
+  if (params.category) query.set('category', params.category)
+  if (params.status) query.set('status', params.status)
+  const queryString = query.toString()
+
+  const response = await authorizedFetch(`/api/v1/documents${queryString ? `?${queryString}` : ''}`)
+  return (await response.json()) as DocumentsListResponse
+}
+
+/** Docs/API.md §16. */
+export async function getDocument(documentId: string): Promise<DocumentSummary> {
+  const response = await authorizedFetch(`/api/v1/documents/${encodeURIComponent(documentId)}`)
+  return (await response.json()) as DocumentSummary
+}
+
+/** Docs/API.md §17. */
+export async function getAccessUrl(documentId: string): Promise<AccessUrlResponse> {
+  const response = await authorizedFetch(`/api/v1/documents/${encodeURIComponent(documentId)}/access-url`)
+  return (await response.json()) as AccessUrlResponse
+}
+
+/**
+ * PUTs a single file's raw bytes directly to S3 using its presigned URL, reporting
+ * upload progress. Uses XMLHttpRequest rather than fetch because fetch cannot report
+ * upload (as opposed to download) progress.
+ */
+export function uploadFileToS3(
+  url: string,
+  headers: Record<string, string>,
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    Object.entries(headers).forEach(([name, value]) => xhr.setRequestHeader(name, value))
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100))
+      }
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        reject(new Error(`Upload failed with status ${xhr.status}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('Upload failed'))
+    xhr.send(file)
+  })
 }

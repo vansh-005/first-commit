@@ -17,6 +17,7 @@
     <aws-serverless-java-container.version>2.1.3</aws-serverless-java-container.version>
     <aws-lambda-java-core.version>1.2.3</aws-lambda-java-core.version>
     <aws-lambda-java-events.version>3.13.0</aws-lambda-java-events.version>
+    <aws-sdk.version>2.34.0</aws-sdk.version>
     <junit.version>5.10.3</junit.version>
   </properties>
 
@@ -26,6 +27,14 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
         <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws-sdk.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -70,6 +79,23 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>dynamodb-enhanced</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+    </dependency>
+
+    <!-- Lighter/faster-initializing HTTP client than the Apache default — matters for
+         Lambda cold start even with SnapStart. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>url-connection-client</artifactId>
+    </dependency>
   </dependencies>
 
   <build>
@@ -80,6 +106,10 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
           <release>${java.release}</release>
+          <!-- Spring's @PathVariable/@RequestParam resolve unnamed parameters via
+               reflection; without this they fail at runtime with
+               "parameter name information not available via reflection". -->
+          <parameters>true</parameters>
         </configuration>
       </plugin>
 

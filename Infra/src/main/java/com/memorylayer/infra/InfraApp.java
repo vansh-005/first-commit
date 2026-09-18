@@ -32,8 +32,11 @@ public class InfraApp {
         AuthStack authStack = new AuthStack(app, "MemoryLayerAuthStack",
                 StackProps.builder().env(env).build(), AMPLIFY_ORIGIN, googleClientId);
 
+        DataStack dataStack = new DataStack(app, "MemoryLayerDataStack",
+                StackProps.builder().env(env).build(), AMPLIFY_ORIGIN);
+
         ApiStack apiStack = new ApiStack(app, "MemoryLayerApiStack",
-                StackProps.builder().env(env).build(), authStack);
+                StackProps.builder().env(env).build(), authStack, dataStack);
 
         new FrontendStack(app, "MemoryLayerFrontendStack",
                 StackProps.builder().env(env).build(),
