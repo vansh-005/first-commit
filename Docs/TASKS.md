@@ -134,13 +134,18 @@ Do not move on until this works.
 
 ## Google OAuth
 
-- [ ] Create/configure Google OAuth client — **blocked on you**; exact redirect URI given
-      below
-- [ ] Configure Cognito redirect URI in Google
-- [x] Store client secret securely — code wired to read
-      `memory-layer/google-oauth-client-secret` from Secrets Manager via a CloudFormation
-      dynamic reference (verified in the synthesized template: never plaintext)
-- [ ] Verify Google login end-to-end — blocked on deploy, which is blocked on the above
+- [x] Create/configure Google OAuth client (`326049175774-...apps.googleusercontent.com`)
+- [x] Configure Cognito redirect URI in Google
+- [x] Store client secret securely — verified: `memory-layer/google-oauth-client-secret`
+      exists in Secrets Manager and is wired via a CloudFormation dynamic reference
+      (confirmed in the synthesized template: never plaintext)
+- [x] Verify Google login end-to-end (server-side wiring) — confirmed by calling Cognito's
+      real `/oauth2/authorize?...&identity_provider=Google` endpoint directly: it 302s to
+      `accounts.google.com/o/oauth2/v2/auth` with the correct `client_id` and a
+      `redirect_uri` of Cognito's own `/oauth2/idpresponse`, proving the User Pool client,
+      callback URL registration, and Google IdP config are all correctly linked. Actually
+      completing a Google account login/consent in a browser is a manual step only you can
+      do (see below).
 
 ## API authorization
 
@@ -165,25 +170,32 @@ Do not move on until this works.
 
 ## Verification
 
-- [ ] Unauthenticated protected request returns `401` — to verify after deploy
-- [ ] Email/password login works — to verify after deploy
-- [ ] Google login works — blocked on Google OAuth client setup
-- [ ] Authenticated API can read `sub` — to verify after deploy (local backend test already
-      covers the claims-extraction logic in isolation)
+- [x] Unauthenticated protected request returns `401` — verified: `GET /api/v1/me` with no
+      token and with a garbage token both return `401 {"message":"Unauthorized"}`
+- [x] Email/password path is reachable — verified: Cognito's hosted login page (no
+      `identity_provider` hint) renders `200` with "Sign in", "Sign up", "Password", and
+      "Continue with Google" all present, no client/redirect errors
+- [x] Google login path is reachable — verified: the Google-hinted authorize request 302s
+      correctly to Google's consent screen (see above)
+- [x] Deployed frontend serves the real Phase 2 build — verified: production JS bundle
+      contains the real Cognito issuer, hosted domain, client ID, and `memory-api/access`
+      scope (confirmed via direct string search in the fetched bundle)
+- [ ] Authenticated API can read `sub` **in the live deployed app** — the backend logic is
+      covered by an isolated unit test, and the underlying Cognito/API Gateway wiring is
+      verified above, but nobody has completed an actual login yet, so the full round trip
+      (real login → real token → `/me` → displayed `sub` on the Home page) is unconfirmed.
+      **Manual step for you**: open https://main.d28nd6lc9fjyiv.amplifyapp.com/login in a
+      browser, sign in with Google (or create an account via email/password), and confirm
+      the Home page shows your email and a `sub` value with no error.
 
-### Phase 2 blockers
+### Phase 2 notes
 
-- **Google OAuth client**: not yet created. Exact redirect URI to register in Google Cloud
-  Console (confirmed from the synthesized template, domain prefix
-  `memory-layer-auth-907297`):
-  ```text
-  https://memory-layer-auth-907297.auth.ap-south-1.amazoncognito.com/oauth2/idpresponse
-  ```
-  See setup steps in the Phase 2 plan message. Once you have the Client ID/Secret:
-  1. `aws secretsmanager create-secret --name memory-layer/google-oauth-client-secret --secret-string '<secret>' --region ap-south-1`
-  2. Deploy with `GOOGLE_OAUTH_CLIENT_ID=<client-id> cdk deploy MemoryLayerAuthStack MemoryLayerApiStack MemoryLayerFrontendStack`
-- Local implementation, backend/CDK tests, and `cdk synth` (all three stacks) are complete
-  and passing. Nothing has been deployed for Phase 2 yet.
+- Amplify env vars alone don't trigger a rebuild; the same lesson as Phase 1's GitHub
+  connection applied here too — a manual `start-job` was used once before the code was
+  pushed, then the real push correctly auto-triggered the build that shipped the actual
+  Phase 2 frontend code (`enableAutoBuild` on `CfnBranch`).
+- Deployed resources: User Pool `ap-south-1_EcoZ4MroP`, SPA client
+  `2pa5i5dfkq23gok012n92t5okl`, hosted domain `memory-layer-auth-907297`.
 
 ### Phase 2 exit condition
 
