@@ -180,13 +180,10 @@ Do not move on until this works.
 - [x] Deployed frontend serves the real Phase 2 build — verified: production JS bundle
       contains the real Cognito issuer, hosted domain, client ID, and `memory-api/access`
       scope (confirmed via direct string search in the fetched bundle)
-- [ ] Authenticated API can read `sub` **in the live deployed app** — the backend logic is
-      covered by an isolated unit test, and the underlying Cognito/API Gateway wiring is
-      verified above, but nobody has completed an actual login yet, so the full round trip
-      (real login → real token → `/me` → displayed `sub` on the Home page) is unconfirmed.
-      **Manual step for you**: open https://main.d28nd6lc9fjyiv.amplifyapp.com/login in a
-      browser, sign in with Google (or create an account via email/password), and confirm
-      the Home page shows your email and a `sub` value with no error.
+- [x] Authenticated API can read `sub` **in the live deployed app** — confirmed manually in
+      the browser: Google sign-in completes, the Home page shows the signed-in email, and
+      the authenticated `GET /api/v1/me` call returns `200` with the real `sub`. Full round
+      trip (real login → real token → `/me` → displayed `sub`) verified end to end.
 
 ### Phase 2 notes
 
@@ -196,12 +193,27 @@ Do not move on until this works.
   Phase 2 frontend code (`enableAutoBuild` on `CfnBranch`).
 - Deployed resources: User Pool `ap-south-1_EcoZ4MroP`, SPA client
   `2pa5i5dfkq23gok012n92t5okl`, hosted domain `memory-layer-auth-907297`.
+- **Post-deploy bugfix**: the first browser login surfaced a `500` on `GET /api/v1/me`.
+  CloudWatch showed `ClassCastException: LinkedHashMap cannot be cast to
+  HttpApiV2JwtAuthorizer`. Root cause: `LambdaHandler` used
+  `RequestHandler<HttpApiV2ProxyRequest, ...>`, which relies on AWS Lambda's own default
+  event deserialization — that path does not honor aws-serverless-java-container's
+  `@JsonDeserialize` annotation on `HttpApiV2AuthorizerMap`, so the JWT authorizer's claims
+  landed as a raw `LinkedHashMap` instead of the typed model. Fixed by switching to
+  `RequestStreamHandler` + `proxyStream(...)`, which parses the raw event with the
+  container library's own configured `ObjectMapper`. No JWT decoding/revalidation logic was
+  touched — API Gateway still does all of that. Covered by a new regression test
+  (`LambdaHandlerTest`) that invokes the real Lambda entrypoint with a raw HTTP API v2 event
+  JSON, which a MockMvc-based test (injecting an already-typed context) could not have
+  caught. Redeployed `MemoryLayerApiStack` only; `MemoryLayerAuthStack` had no changes.
 
 ### Phase 2 exit condition
 
 ```text
 Google login -> Cognito -> JWT -> protected API
 ```
+
+**Met.** Verified end to end in the browser (see above).
 
 ---
 
