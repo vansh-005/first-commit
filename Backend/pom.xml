@@ -90,6 +90,13 @@
       <artifactId>s3</artifactId>
     </dependency>
 
+    <!-- Phase 4: StartIngestionJob/GetIngestionJob control-plane calls from the ingestion
+         coordinator and status reconciler Lambdas. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>bedrockagent</artifactId>
+    </dependency>
+
     <!-- Lighter/faster-initializing HTTP client than the Apache default — matters for
          Lambda cold start even with SnapStart. -->
     <dependency>

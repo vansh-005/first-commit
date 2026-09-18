@@ -12,8 +12,10 @@
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <aws-cdk-lib.version>2.199.0</aws-cdk-lib.version>
-    <constructs.version>10.4.2</constructs.version>
+    <!-- Bumped for Phase 4: S3 Vectors CDK support (AWS::S3Vectors::*) landed ~Nov 2025,
+         after 2.199.0. -->
+    <aws-cdk-lib.version>2.270.0</aws-cdk-lib.version>
+    <constructs.version>10.8.1</constructs.version>
     <junit.version>5.10.3</junit.version>
   </properties>
 

@@ -321,26 +321,47 @@ but `MemoryLayerFrontendStack` wasn't part of this deploy.
 
 # Phase 4 — Asynchronous ingestion
 
+Implemented and validated via `mvn test`, `mvn package`, and `cdk synth` (all pass) plus a
+pre-implementation AWS compatibility spike (see below). **Not yet deployed** — stopped for
+review per plan, so the live-verification checklist below is intentionally still unchecked.
+
+## Compatibility spike (before full implementation)
+
+- [x] Upgrade `aws-cdk-lib` (2.199.0 → 2.270.0, for `AWS::S3Vectors::*` support) — `mvn test`/`cdk synth`/`cdk diff` all clean
+- [x] Create S3 Vectors + KB + BDA data source in `ap-south-1` — done manually via CLI, then torn down
+- [x] Verify BDA parsing end-to-end — a real PDF ingested and became retrievable; a hand-generated 1×1 PNG failed BDA with "file format was not supported" (root cause not fully isolated — flagged for early real-file testing, see Verification below)
+- [x] Establish exact KB/BDA IAM permissions — confirmed against AWS's documented service-role policy, including the undocumented-until-tested requirement that the supplemental-storage policy needs `s3:DeleteObject`, not just `Get`/`Put`
+- [x] Verify Titan Text Embeddings V2 + S3 Vectors — `Retrieve` returned correctly ranked, correctly metadata-tagged results for both the text and BDA/PDF paths
+- [x] Test one multimodal (PDF) and one text-document path via the separated staging prefixes — both ingested and retrieved successfully
+- [x] Spike resources (KB, data sources, IAM role, S3 Vectors bucket/index, supplemental bucket, test objects) fully deleted after the spike — confirmed via `get-knowledge-base`/`get-vector-bucket`/`get-role`/`head-bucket` all returning not-found
+
+Two design amendments came out of this spike and are reflected in the implementation below:
+Knowledge Base staging prefixes (`kb/multimodal/`, `kb/text/`) instead of two data sources
+scanning `users/`, and a generous SQS retry budget sized around Bedrock's real
+one-job-per-Knowledge-Base concurrency limit rather than a small fixed retry count. See
+`Docs/ARCHITECTURE.md` §7.3.1–7.3.2 and §7.4.1 for the full detail and the exact errors that
+drove each decision.
+
 ## Event pipeline
 
-- [ ] S3 `ObjectCreated` notification
-- [ ] SQS ingestion queue
-- [ ] SQS DLQ
-- [ ] Configure retry/redrive policy
-- [ ] Ingestion coordinator Lambda
-- [ ] Controlled Lambda concurrency
+- [x] S3 `ObjectCreated` notification — `DataStack`, filtered to `users/` prefix only
+- [x] SQS ingestion queue — `DataStack`
+- [x] SQS DLQ — `DataStack`
+- [x] Configure retry/redrive policy — `visibilityTimeout=5min`, `maxReceiveCount=20` (~100 min budget, sized around Bedrock's single-concurrent-job constraint, not a small fixed count)
+- [x] Ingestion coordinator Lambda — `IngestionCoordinatorHandler` (`IngestionStack`)
+- [x] Controlled Lambda concurrency — `reservedConcurrentExecutions(1)`
 
 ## Knowledge Base
 
-- [ ] Create/configure Bedrock Knowledge Base
-- [ ] Configure S3 Vectors
-- [ ] Configure embedding model
-- [ ] Configure multimodal/BDA data source
-- [ ] Configure text-document data source
-- [ ] Verify supported file types
-- [ ] Create metadata sidecars
+- [x] Create/configure Bedrock Knowledge Base — `IngestionStack` (`CfnKnowledgeBase`, customer-managed, S3 Vectors storage)
+- [x] Configure S3 Vectors — `CfnVectorBucket` + `CfnIndex` (dimension 1024, float32, cosine)
+- [x] Configure embedding model — Titan Text Embeddings V2
+- [x] Configure multimodal/BDA data source — scoped to `kb/multimodal/`
+- [x] Configure text-document data source — scoped to `kb/text/`
+- [x] Verify supported file types — PDF and plain text confirmed via the spike; **image/audio/video not yet confirmed with real files** (see Verification)
+- [x] Create metadata sidecars — `KbMetadataSidecar`/`KbStagingService`, written beside the staged copy, not the original upload
 
-Required metadata:
+Required metadata (implemented exactly):
 
 ```text
 userId
@@ -351,42 +372,62 @@ fileName
 
 ## Processing state
 
-- [ ] S3 event sets document `UPLOADED`
-- [ ] Ingestion coordinator starts incremental ingestion job
-- [ ] Store ingestion job state
-- [ ] Set affected documents to `INDEXING`
+- [x] S3 event sets document `UPLOADED` — `IngestionCoordinatorHandler.markUploaded` (idempotent: only UPLOAD_PENDING -> UPLOADED)
+- [x] Ingestion coordinator starts incremental ingestion job — per data source, per batch
+- [x] Store ingestion job state — `IngestionJob` / `IngestionJobRepository`
+- [x] Set affected documents to `INDEXING` — idempotent: only UPLOADED -> INDEXING
 
 ## Ingestion job tracking
 
-- [ ] Create ingestion-job entity
+- [x] Create ingestion-job entity
 
 ```text
 PK = SYSTEM#INGESTION
 SK = JOB#<jobId>
 ```
 
-- [ ] Store affected document IDs
-- [ ] Add TTL for completed job records
-- [ ] EventBridge scheduled reconciler
-- [ ] Call `GetIngestionJob`
-- [ ] Mark documents `READY` on success
-- [ ] Mark documents `FAILED` on failure
-- [ ] Store safe failure reason
+- [x] Store affected document IDs — as `"userId#documentId"` pairs (no documentId-only index exists; see `Docs/DATA_MODEL.md` §14)
+- [x] Add TTL for completed job records — `expiresAt`, table's `timeToLiveAttribute`, 7-day retention after completion
+- [x] EventBridge scheduled reconciler — `StatusReconcilerHandler`, `Schedule.rate(1 minute)`
+- [x] Call `GetIngestionJob` — per in-progress job, each run
+- [x] Mark documents `READY` on success — idempotent: only INDEXING -> READY
+- [x] Mark documents `FAILED` on failure — idempotent: only INDEXING -> FAILED
+- [x] Store safe failure reason — generic user-facing message; real Bedrock failure reasons go to CloudWatch only, never the document record
 
-## Verification
+## Verification — deployed and confirmed end-to-end (2026-09-18/19)
 
-- [ ] PDF becomes searchable
-- [ ] Image becomes searchable
-- [ ] At least one audio/video input becomes searchable
-- [ ] At least one text document path works
-- [ ] Failed processing is visible in UI
-- [ ] Burst of multiple uploads does not create uncontrolled ingestion calls
+Real files uploaded through the actual deployed API (not synthetic/degenerate test data), full pipeline exercised end to end: `UPLOAD_PENDING` -> `UPLOADED` -> `INDEXING` -> `READY`, each confirmed via DynamoDB, then confirmed retrievable via a direct `Retrieve` call with correct `userId`/`documentId`/`mediaCategory`/`fileName` metadata.
+
+- [x] PDF becomes searchable — real PDF, `READY`, retrieved with correct text content
+- [x] Image becomes searchable — **real JPEG and PNG both confirmed**, `READY`, retrieved with an accurate BDA-generated image description. The earlier spike's synthetic-image failures turned out to be a real, now-fixed bug: `parsingModality` must be explicitly set to `MULTIMODAL` on the data source's BDA config, or BDA silently runs in a text/document-only mode and rejects every image as "file format was not supported" — see "Deployment-time fixes" below
+- [x] Audio and video both become searchable — a synthetic pure-tone WAV was correctly *rejected* by BDA ("no text content found in the files" — expected, not a bug, since there's no speech to transcribe); a **real speech recording** (Windows TTS) was correctly transcribed and retrieved, matching the spoken content exactly. A real MP4 (H.264 test pattern) was retrieved with an accurate BDA-generated video summary.
+- [x] Text document path works — real Markdown file, `READY`, retrieved with correct content
+- [ ] Failed processing is visible in UI — `FileCard` already renders a `FAILED` status label (Phase 3); not exercised against a real failed document in the browser this pass (only verified via DynamoDB/API)
+- [x] Burst of multiple uploads does not create uncontrolled ingestion calls — 6 files uploaded simultaneously (repeated across several rounds during fix verification); confirmed via full ingestion-job history that **no two jobs ever ran concurrently** on the Knowledge Base, and `ConflictException` was repeatedly observed and correctly handled as retryable backpressure (see coordinator logs: "Ingestion job busy for data source ...; N document(s) will retry")
+- [x] DLQ remained empty throughout all testing, including through several real bugs that caused repeated retries before their fixes deployed
+- [x] EventBridge reconciler confirmed running exactly once per minute on schedule throughout the test window
+
+### Deployment-time fixes found and applied (not yet committed — pending review)
+
+1. **Missing explicit CDK dependency** — `CfnKnowledgeBase` only depended on the IAM Role resource (via `roleArn`), not the separate `AWS::IAM::Policy` resource holding its permissions, so CloudFormation could (and did, deterministically, twice) create the KB before its permissions existed. Fixed by building one explicit `Policy` construct and adding `knowledgeBase.getNode().addDependency(kbPolicy)`.
+2. **Account Lambda concurrency limit** — this account's total concurrent-execution limit is 10 (`aws lambda get-account-settings`), and AWS requires ≥10 unreserved at all times, so `reservedConcurrentExecutions(1)` on the coordinator could never be satisfied. Removed; correctness still holds via the KB's single-job limit + `ConflictException` handling, not Lambda-level serialization.
+3. **`StartIngestionJob`/`GetIngestionJob` wrong IAM resource ARN** — assumed a `.../data-source/*` sub-resource; the real `AccessDeniedException` named the bare Knowledge Base ARN as the checked resource. Fixed.
+4. **BDA's actual invocation profile is cross-region** — for a KB in `ap-south-1`, BDA invokes through an APAC profile hosted in `ap-northeast-1` under this account, not the same-region AWS-owned profile the official docs example shows. Fixed by wildcarding the region segment in the `BDAInvoke`/`BDAGetStatus` policy resources.
+5. **`parsingModality` never set** — without explicitly setting it to `MULTIMODAL` on the BDA data source's `bedrockDataAutomationConfiguration`, BDA silently ran in a text/document-only mode; every real JPEG/PNG/WAV/MP4 was rejected as an unsupported format and only PDF worked. This is the root cause behind the earlier spike's unresolved synthetic-image failures.
+6. **Job tracking ordering bug (found via real concurrent traffic)** — `IngestionCoordinatorHandler` used to mark documents `INDEXING` *before* saving the `IngestionJob` DynamoDB record. With Lambda concurrency no longer reserved to 1 (fix #2), two invocations can race to update the same `Document`; the loser's write throws before the job record is ever saved, orphaning a real, already-started Bedrock job with no tracking record — the reconciler can never find it, and it silently self-heals only once the orphaned job finishes on its own. Fixed by saving the job record immediately after `StartIngestionJob` succeeds, and making the per-document status update retry once on a version conflict by re-reading the current record.
+7. Two DataSource-recreation naming collisions during iteration (`AWS::Bedrock::DataSource` names must be unique per KB, and CloudFormation's replace-then-delete ordering collided with that) were resolved by deleting the stale data source via CLI before retrying `cdk deploy` — not a code bug, just an operational note for anyone changing a data source's parsing configuration later.
+
+### Known residual behavior (not a correctness bug, but worth documenting)
+
+When a burst of files across the two data sources contends for the Knowledge Base's single job slot, whichever coordinator invocation happens to win the race only tracks its *own* local batch in the `IngestionJob` record — even though Bedrock's incremental sync scans and indexes the *entire* pending file set in that data source, including files queued by other (losing/retrying) invocations. Those other files get correctly retried and eventually get their own (now largely redundant, since already indexed) job, so nothing is lost or shown incorrectly — but a few extra no-op ingestion jobs can run during a heavy burst. Acceptable for MVP; a future hardening pass could have a winning invocation claim all currently-`UPLOADED` documents for its data source rather than just its own batch.
 
 ### Phase 4 exit condition
 
 ```text
 upload -> async processing -> READY
 ```
+
+**Met.** Verified end to end against the real deployed pipeline for all six required formats (JPEG, PNG, PDF, MD, audio, video), including citation-quality metadata on retrieval.
 
 ---
 

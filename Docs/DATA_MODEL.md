@@ -282,7 +282,6 @@ users/
       550e8400-e29b-41d4-a716-446655440000/
         original/
           internship-offer.pdf
-          internship-offer.pdf.metadata.json
 ```
 
 Reasons:
@@ -290,32 +289,52 @@ Reasons:
 - tenant ownership is obvious,
 - every file has a stable `documentId`,
 - filename collisions are impossible,
-- authorization checks can verify the expected user prefix,
-- source files and Knowledge Base metadata remain together.
+- authorization checks can verify the expected user prefix.
 
 The backend must generate the S3 key.
 
 The client must **not** be allowed to choose arbitrary bucket keys.
 
+### 8.1 Knowledge Base staging prefixes (Phase 4 amendment)
+
+Unlike the original plan, the Knowledge Base metadata sidecar is **not** written beside the
+original upload. Two Knowledge Base data sources exist (multimodal/BDA and text), and having
+both scan the same `users/` prefix risked double-ingestion or ambiguous routing. Instead, the
+Phase 4 ingestion coordinator copies each uploaded object into a parser-specific staging
+prefix in the **same bucket** and writes the sidecar there:
+
+```text
+kb/multimodal/<documentId>/<fileName>
+kb/multimodal/<documentId>/<fileName>.metadata.json
+
+kb/text/<documentId>/<fileName>
+kb/text/<documentId>/<fileName>.metadata.json
+```
+
+The original `users/<userId>/documents/<documentId>/original/<fileName>` object is left
+untouched — `kb/` only ever holds copies. The S3 `ObjectCreated` notification that drives
+ingestion is filtered to `users/` only, so these staging writes (and their sidecars) never
+re-trigger the pipeline. See `Docs/ARCHITECTURE.md` §7.3.1.
+
 ---
 
 # 9. Bedrock Knowledge Base metadata
 
-Every source file ingested by the Knowledge Base gets an S3 sidecar metadata file.
+Every source file ingested by the Knowledge Base gets an S3 sidecar metadata file, written
+beside its **staged copy** under `kb/multimodal/` or `kb/text/` (§8.1) — not beside the
+original upload.
 
-For:
-
-```text
-internship-offer.pdf
-```
-
-create:
+For a staged copy at:
 
 ```text
-internship-offer.pdf.metadata.json
+kb/text/550e8400-e29b-41d4-a716-446655440000/internship-offer.pdf
 ```
 
-in the same S3 location.
+the sidecar is:
+
+```text
+kb/text/550e8400-e29b-41d4-a716-446655440000/internship-offer.pdf.metadata.json
+```
 
 AWS Knowledge Bases supports this sidecar pattern and makes the attributes available for retrieval filtering.
 
@@ -981,15 +1000,14 @@ Example:
 "PK": "SYSTEM#INGESTION",
 "SK": "JOB#XYZ123",
 
-"entityType": "INGESTION_JOB",
-
 "jobId": "XYZ123",
+"dataSourceId": "data-source-id",
 "status": "IN_PROGRESS",
 
 "documentIds": [
-"doc-1",
-"doc-2",
-"doc-3"
+"abc123#doc-1",
+"abc123#doc-2",
+"def456#doc-3"
 ],
 
 "startedAt": "2026-09-18T03:10:00Z",
@@ -999,6 +1017,12 @@ Example:
 "failureReason": null,
 "expiresAt": 1790000000
 }
+
+**Implementation note:** `documentIds` stores `"<userId>#<documentId>"` pairs, not bare
+document IDs. `DocumentRepository`'s only direct-lookup access pattern is
+`USER#<userId>/DOC#<documentId>` (§16 AP1) — there is no documentId-only index — so the
+status reconciler needs `userId` alongside each `documentId` to look the record back up
+without a new GSI.
 
 Use DynamoDB TTL on expiresAt, perhaps keeping these records for 7 days after completion. They're operational state, not permanent user data.
 

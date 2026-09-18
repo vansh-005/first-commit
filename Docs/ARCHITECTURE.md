@@ -239,13 +239,7 @@ SQS is intentionally **not** inserted into synchronous search/API calls.
 
 ### 7.2 S3 to SQS
 
-S3 `ObjectCreated` notifications are sent to the ingestion queue.
-
-Because Knowledge Base metadata sidecars are stored beside source files, their creation may also produce object events. The ingestion consumer must ignore keys ending in:
-
-```text
-.metadata.json
-```
+S3 `ObjectCreated` notifications are sent to the ingestion queue, **filtered to the `users/` prefix only**. Knowledge Base staging objects and their `.metadata.json` sidecars live under `kb/` (see §7.3.1) and never produce their own S3 events into this queue, so there is no need to filter out `.metadata.json` keys at the consumer.
 
 ### 7.3 Ingestion Coordinator Lambda
 
@@ -253,22 +247,49 @@ The SQS event source mapping should use a small batching window so several uploa
 
 Initial tuning:
 
-- small SQS batch size;
-- short batch window;
+- small SQS batch size (10);
+- short batch window (10s);
 - reserved concurrency `1` initially;
-- DLQ after a small retry count.
+- a **generous** retry budget before DLQ (see §7.3.2) — not a small one.
 
 The coordinator:
 
-1. validates source-object events;
-2. maps object keys to `documentId`s;
-3. marks affected documents `INDEXING`;
-4. starts an incremental Knowledge Base ingestion job;
-5. stores the returned `ingestionJobId` and associated document IDs.
+1. validates source-object events, parsing `userId`/`documentId` back out of the original upload key;
+2. marks affected documents `UPLOADED`;
+3. routes/copies each source object into its Knowledge Base staging prefix and writes its metadata sidecar there (§7.3.1);
+4. marks affected documents `INDEXING`;
+5. starts an incremental Knowledge Base ingestion job for the affected data source;
+6. stores the returned `ingestionJobId` and associated document IDs.
 
-If an ingestion job is already running, the Lambda **must not acknowledge and lose new work**. The messages should remain/retry through SQS after the active job finishes. A subsequent incremental sync will then pick up the newly uploaded objects.
+#### 7.3.1 Knowledge Base staging prefixes
 
-Use an idempotency token where appropriate when starting jobs.
+Two Knowledge Base data sources exist, but they never scan the same `users/` prefix a client uploads into. Instead, the coordinator copies each source object into one of two staging prefixes within the same uploads bucket, and writes its `.metadata.json` sidecar beside the staged copy — not beside the original:
+
+```text
+users/<userId>/documents/<documentId>/original/<fileName>      <- original upload (untouched)
+kb/multimodal/<documentId>/<fileName>                          <- BDA data source watches this
+kb/multimodal/<documentId>/<fileName>.metadata.json
+kb/text/<documentId>/<fileName>                                <- text data source watches this
+kb/text/<documentId>/<fileName>.metadata.json
+```
+
+Routing is by file extension, per §13 of `Docs/API.md`'s multimodal/text lists. This avoids two data sources double-scanning (or ambiguously splitting) the same `users/` prefix, and keeps the S3 event notification's `users/`-only filter sufficient to prevent staging writes from re-entering the pipeline.
+
+#### 7.3.2 Bedrock's single-concurrent-ingestion-job constraint
+
+**A Bedrock Knowledge Base allows only one ingestion job running at a time, across every data source it has** — not one-per-data-source. `StartIngestionJob` returns `ConflictException` ("You have reached the maximum number of concurrent ingestion jobs per knowledge base: 1") whenever a job is already running, whether that job belongs to the multimodal or the text data source. This was confirmed directly against a real Knowledge Base during the Phase 4 compatibility spike, not assumed from documentation.
+
+This means a burst of uploads — even uploads of the same type — routinely queues up behind a single active job. That is **expected backpressure, not a poison message**, and the ingestion queue's retry configuration is sized around it rather than around a small fixed number of "real" failure retries:
+
+```text
+visibilityTimeout: 5 minutes
+maxReceiveCount:   20
+-> roughly 100 minutes of retry budget before a healthy, merely-waiting upload could reach the DLQ
+```
+
+When the coordinator receives `ConflictException`, it leaves the affected documents at `UPLOADED` (not `FAILED`) and reports those SQS messages as batch item failures so they retry later via the queue's own visibility timeout. If an ingestion job is already running, the Lambda **must not acknowledge and lose new work** — the messages remain/retry through SQS after the active job finishes, and a subsequent incremental sync then picks up the newly staged objects.
+
+Use an idempotency token when starting jobs (a fresh UUID per attempt is sufficient — retried `StartIngestionJob` calls are naturally idempotent in effect, since each incremental sync re-scans the data source's current state).
 
 ### 7.4 Managed multimodal parsing
 
@@ -295,6 +316,23 @@ S3 source object
 BDA is responsible for extracting/search-enabling content from supported PDFs, images, audio, and video.
 
 The architecture deliberately chooses the **text-conversion retrieval path** rather than direct native multimodal similarity for MVP. The product's primary need is semantic memory retrieval across modalities, not image-to-image or audio-to-audio similarity.
+
+#### 7.4.1 Multimodal storage destination (supplemental data storage)
+
+BDA/multimodal parsing requires the Knowledge Base to declare a **multimodal storage destination** (`supplementalDataStorageConfiguration`), confirmed the hard way during the Phase 4 compatibility spike:
+
+- It is **required** the moment any data source uses `BEDROCK_DATA_AUTOMATION` parsing — creating a data source with that parser against a KB that lacks this field fails.
+- It is **immutable once the Knowledge Base is created** — there is no update path; changing it requires destroying and recreating the KB (losing its ID and all indexed content).
+- Its S3 URI **must be a bucket root** (`s3://bucket-name`), not a sub-prefix of an existing bucket — a prefix is rejected at KB-creation time.
+- Consequently it lives in its **own dedicated bucket**, separate from the uploads bucket, created and wired up front in the same CDK deploy that creates the Knowledge Base.
+- The KB's IAM role needs `s3:GetObject`, `s3:PutObject`, **and `s3:DeleteObject`** on that bucket — omitting `DeleteObject` fails KB creation with a misleading "write access" validation error rather than a clear permissions error.
+
+#### 7.4.2 BDA parsing modality and cross-region invocation (confirmed at real deployment)
+
+Two more BDA constraints only surfaced once real (non-degenerate) test files were run through a deployed pipeline, not the spike's manual CLI testing:
+
+- The data source's `parsingConfiguration.bedrockDataAutomationConfiguration.parsingModality` field **must be explicitly set to `MULTIMODAL`**. Left unset, BDA silently runs in a text/document-only mode: PDFs still work, but every JPEG, PNG, WAV, and MP4 is rejected as "file format was not supported" — indistinguishable from a genuinely unsupported format unless you know to check this field.
+- BDA's actual invocation profile for a Knowledge Base in `ap-south-1` is **cross-region** — it invokes through an APAC profile hosted in `ap-northeast-1` under the same account (`arn:aws:bedrock:ap-northeast-1:<account-id>:data-automation-profile/apac.data-automation-v1`), not the same-region AWS-owned profile shown in AWS's own documented example policy. The KB role's `bedrock:InvokeDataAutomationAsync`/`bedrock:GetDataAutomationStatus` permissions must cover this region, not just the KB's own region.
 
 ### 7.5 Ingestion status
 
@@ -508,7 +546,7 @@ No VPC is required for the MVP because all selected dependencies expose managed 
 ### Ingestion
 
 - SQS consumer uses partial batch failure/retry behavior rather than silently dropping failed messages.
-- Do not start overlapping Knowledge Base ingestion jobs for the same data source.
+- Do not start overlapping Knowledge Base ingestion jobs — Bedrock enforces this KB-wide (one job at a time across every data source), not per data source; see §7.3.2.
 - New upload events arriving during an active ingestion job remain retryable and cause a later incremental sync.
 - Status polling is out-of-band through EventBridge rather than blocking a Lambda.
 

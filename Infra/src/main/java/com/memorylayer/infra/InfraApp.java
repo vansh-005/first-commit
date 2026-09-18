@@ -38,6 +38,9 @@ public class InfraApp {
         ApiStack apiStack = new ApiStack(app, "MemoryLayerApiStack",
                 StackProps.builder().env(env).build(), authStack, dataStack);
 
+        new IngestionStack(app, "MemoryLayerIngestionStack",
+                StackProps.builder().env(env).build(), dataStack);
+
         new FrontendStack(app, "MemoryLayerFrontendStack",
                 StackProps.builder().env(env).build(),
                 apiStack.getApiEndpoint(), authStack);
