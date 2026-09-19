@@ -874,6 +874,49 @@ awaiting a real-Cognito-login review of Home/Library/Search/Ask with actual data
 - Delete is **explicitly not part of Phase 8** — see Phase 9 (needs coordinated original S3 + KB staging/
   sidecar + DynamoDB + Knowledge Base/vector state).
 
+### Phase 8 correctness round (live-browser findings) — **backend deployed and live-verified (Lambda `live` alias = version 15)**
+
+- [x] UI: double focus ring on search inputs fixed (root cause: the global `*:focus-visible` rule was
+      unlayered so it beat Tailwind's `focus:outline-none`; now in `@layer base`, one container
+      border+faint-ring treatment); Recollect wordmark links to `/app` (in-app) or `/` (public);
+      `FileThumb` is the single type-specific preview (PDF page / document / spreadsheet / audio
+      waveform / video frame, size-aware) across Home, Library, Search and Ask.
+- [x] **Search relevance measured, not guessed.** Labelled Retrieve queries against the real KB: 45+ clearly
+      absent queries topped out at **0.5955**; clear positives 0.74-0.85, natural paraphrases 0.64-0.73,
+      vague topical queries ~0.60-0.62. `MIN_RELEVANCE_SCORE = 0.62` (env-overridable), applied per chunk
+      **before** dedup. An absent query returns `results: []`.
+- [x] **Ask correctness:** preflight `Retrieve` with the same tenant filter + gate; nothing relevant ->
+      deterministic "I couldn't find anything in your memories that answers that.", 0 citations, and
+      `RetrieveAndGenerate` is not called; otherwise custom generation prompt (private-memories framing,
+      answer only from context, no outside advice, exact refusal sentence) with generation restricted to
+      the relevant documents via `documentId in [...]` AND-ed after the tenant clause; citations limited to
+      gate-passing documents; refusals drop citations.
+- [x] AWS placeholder requirements verified (docs + live): `$search_results$` required; `$query$` only for
+      Claude v2-and-earlier; `$output_format_instructions$` required for citation references (omitting it
+      returned a citation with **zero** references live).
+- [x] **Find path:** the model cannot see filenames (verified: with all 8 chunks from
+      `NumericalMethods_Assignment1.pdf` it still said "couldn't find" to "do I have numerical methods
+      assignment?"), so existence/locate questions are answered from relevant documents' metadata.
+- [x] Tests: backend 121 (gate/threshold regression from measured scores, search positive+negative,
+      Ask preflight/no-answer/restricted-generation/citation-filter/find/follow-up/isolation); frontend 99.
+- [x] **Live verification against the real KB** with the real service classes (opt-in
+      `LiveRelevanceVerificationTest`, DynamoDB stubbed, read-only Bedrock): all 7 pass — absent Search -> `[]`
+      (both accounts), `numerical methods assignment` -> `NumericalMethods_Assignment1.pdf`, AWS-credit Ask ->
+      no-answer/0 citations with generation never invoked, existence question -> the actual file, two known
+      content questions -> grounded answers citing only their own document, cross-user Ask/Search -> nothing,
+      follow-up without standalone match still answers.
+- [x] Deployed `MemoryLayerApiStack` only via `Infra/deploy.ps1` (diff was Lambda code + SnapStart version/alias
+      rollover only; no IAM/env/route changes). Version 15 `Active`, SnapStart `On`, `/health` 200.
+- [x] **Live-verified against the deployed API** (16/16): absent Search -> `[]` (both accounts); known Search ->
+      the expected file; AWS-credit Ask -> deterministic no-answer, 0 citations, `sessionId: null` and no
+      AskSession row written (i.e. no generation); existence Ask -> the actual file + citation; known content
+      Asks -> grounded, citing only their own document; cross-user Search/Ask -> nothing, and replaying another
+      user's real sessionId -> 409; contextual follow-up -> same session, grounded. CloudWatch for the window:
+      15 requests, only the deliberate 409, no other errors.
+- [x] Frontend pushed to `main` (Amplify build) after the backend passed — **stopped for browser review**
+- [ ] Known limits: a 0.62 gate drops vague topical queries (e.g. "Newton Raphson method", ~0.61); Ask now makes
+      one extra `Retrieve` per question (added latency not yet measured in Lambda)
+
 - [ ] File-detail page (`/app/document/:id`) — **deliberately deferred**; still a stub, nothing links to it
 - [x] Landing hero verified at 1280x600, 1366x650 (mockup search + answer visible above the fold); Login collage re-laid out with no overlaps
 - [x] Pushed to `main` (Amplify auto-build)

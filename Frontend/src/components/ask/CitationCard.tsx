@@ -31,6 +31,7 @@ export function CitationCard({ citation, index }: { citation: Citation; index?: 
           )}
           <div className="size-14 shrink-0 overflow-hidden rounded-[var(--radius-md)] border border-border">
             <FileThumb
+              size="sm"
               documentId={citation.documentId}
               fileName={citation.fileName}
               mediaCategory={citation.mediaCategory}

@@ -67,7 +67,7 @@ export function HomePage() {
             event.preventDefault()
             search(query)
           }}
-          className="mt-6 flex items-center gap-2 rounded-[var(--radius-lg)] border border-border-strong bg-surface p-2 pl-4 shadow-[var(--shadow-sm)] transition-colors focus-within:border-accent"
+          className="mt-6 flex items-center gap-2 rounded-[var(--radius-lg)] border border-border-strong bg-surface p-2 pl-4 shadow-[var(--shadow-sm)] transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20"
         >
           <Search className="size-5 shrink-0 text-text-muted" aria-hidden="true" />
           <label className="flex-1">
@@ -141,7 +141,7 @@ export function HomePage() {
             {processingDocs.slice(0, MAX_PROCESSING_ROWS).map((document) => (
               <li key={document.documentId} className="flex items-center gap-3 px-3 py-2">
                 <div className="size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border">
-                  <FileThumb documentId={document.documentId} fileName={document.fileName} mediaCategory={document.mediaCategory} />
+                  <FileThumb size="xs" documentId={document.documentId} fileName={document.fileName} mediaCategory={document.mediaCategory} />
                 </div>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{document.fileName}</span>
                 <StatusBadge status={document.status} />

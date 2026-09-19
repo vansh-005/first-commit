@@ -67,7 +67,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="What are you trying to remember?"
-            className="h-9 w-full rounded-[var(--radius-md)] border border-border bg-surface-muted pl-9 pr-14 text-sm text-text-primary transition-colors placeholder:text-text-muted focus:border-accent focus:outline-none"
+            className="h-9 w-full rounded-[var(--radius-md)] border border-border bg-surface-muted pl-9 pr-14 text-sm text-text-primary transition-colors placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
           />
           <kbd
             aria-hidden="true"

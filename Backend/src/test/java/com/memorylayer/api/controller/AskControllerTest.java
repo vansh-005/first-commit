@@ -18,7 +18,10 @@ import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeCl
 import software.amazon.awssdk.services.bedrockagentruntime.model.Citation;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrievalResultContent;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveAndGenerateOutput;
+import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalResult;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveAndGenerateRequest;
+import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveRequest;
+import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveResponse;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveAndGenerateResponse;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrievedReference;
 
@@ -65,6 +68,18 @@ class AskControllerTest {
         return document;
     }
 
+    /** The preflight Retrieve: one chunk well above the relevance gate for the given document. */
+    private void preflightFinds(String documentId) {
+        when(bedrockAgentRuntimeClient.retrieve(any(RetrieveRequest.class)))
+                .thenReturn(RetrieveResponse.builder()
+                        .retrievalResults(KnowledgeBaseRetrievalResult.builder()
+                                .content(c -> c.text("relevant excerpt"))
+                                .metadata(Map.of("documentId", software.amazon.awssdk.core.document.Document.fromString(documentId)))
+                                .score(0.85)
+                                .build())
+                        .build());
+    }
+
     private static RetrieveAndGenerateResponse responseWithCitation(String bedrockSessionId, String documentId) {
         Citation citation = Citation.builder()
                 .retrievedReferences(RetrievedReference.builder()
@@ -81,6 +96,7 @@ class AskControllerTest {
 
     @Test
     void returnsAGroundedAnswerWithCitationsAndNeverExposesTheRawBedrockSessionId() throws Exception {
+        preflightFinds("doc-1");
         when(bedrockAgentRuntimeClient.retrieveAndGenerate(any(RetrieveAndGenerateRequest.class)))
                 .thenReturn(responseWithCitation("raw-bedrock-session-id", "doc-1"));
         when(documentRepository.findByUserAndDocumentId(eq(USER_ID), eq("doc-1")))
@@ -118,6 +134,7 @@ class AskControllerTest {
 
     @Test
     void clientSuppliedUserIdIsIgnoredNotUsedForFiltering() throws Exception {
+        preflightFinds("doc-1");
         when(bedrockAgentRuntimeClient.retrieveAndGenerate(any(RetrieveAndGenerateRequest.class)))
                 .thenReturn(RetrieveAndGenerateResponse.builder()
                         .sessionId("s1")
@@ -141,8 +158,37 @@ class AskControllerTest {
         verify(bedrockAgentRuntimeClient).retrieveAndGenerate(captor.capture());
         var filter = captor.getValue().retrieveAndGenerateConfiguration()
                 .knowledgeBaseConfiguration().retrievalConfiguration().vectorSearchConfiguration().filter();
-        org.assertj.core.api.Assertions.assertThat(filter.equalsValue().key()).isEqualTo("userId");
-        org.assertj.core.api.Assertions.assertThat(filter.equalsValue().value().asString()).isEqualTo(USER_ID);
+        org.assertj.core.api.Assertions.assertThat(filter.andAll().get(0).equalsValue().key()).isEqualTo("userId");
+        org.assertj.core.api.Assertions.assertThat(filter.andAll().get(0).equalsValue().value().asString()).isEqualTo(USER_ID);
+        // The preflight retrieval is scoped to the same authenticated user.
+        var retrieveCaptor = org.mockito.ArgumentCaptor.forClass(RetrieveRequest.class);
+        verify(bedrockAgentRuntimeClient).retrieve(retrieveCaptor.capture());
+        var preflightFilter = retrieveCaptor.getValue().retrievalConfiguration().vectorSearchConfiguration().filter();
+        org.assertj.core.api.Assertions.assertThat(preflightFilter.equalsValue().value().asString()).isEqualTo(USER_ID);
+    }
+
+    @Test
+    void whenNothingRelevantExistsTheApiReturnsTheGroundedNoAnswerWith200AndNoCitations() throws Exception {
+        // Retrieve returns only low-scoring nearest neighbours (e.g. the AWS-credit question when no such memory exists).
+        when(bedrockAgentRuntimeClient.retrieve(any(RetrieveRequest.class)))
+                .thenReturn(RetrieveResponse.builder()
+                        .retrievalResults(KnowledgeBaseRetrievalResult.builder()
+                                .content(c -> c.text("unrelated"))
+                                .metadata(Map.of("documentId", software.amazon.awssdk.core.document.Document.fromString("doc-1")))
+                                .score(0.5955)
+                                .build())
+                        .build());
+
+        mockMvc.perform(post("/api/v1/ask")
+                        .requestAttr(RequestReader.HTTP_API_CONTEXT_PROPERTY, AuthorizedRequestSupport.contextForSub(USER_ID))
+                        .contentType("application/json")
+                        .content("{ \"question\": \"How much AWS credit did I have?\" }"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value("I couldn't find anything in your memories that answers that."))
+                .andExpect(jsonPath("$.citations.length()").value(0));
+
+        org.mockito.Mockito.verify(bedrockAgentRuntimeClient, org.mockito.Mockito.never())
+                .retrieveAndGenerate(any(RetrieveAndGenerateRequest.class));
     }
 
     @Test
@@ -166,6 +212,7 @@ class AskControllerTest {
         AskSession existing = new AskSession();
         existing.setBedrockSessionId("raw-bedrock-session-id");
         when(askSessionRepository.findByUserAndSessionId(USER_ID, "app-session-1")).thenReturn(Optional.of(existing));
+        preflightFinds("doc-1");
         when(bedrockAgentRuntimeClient.retrieveAndGenerate(any(RetrieveAndGenerateRequest.class)))
                 .thenReturn(responseWithCitation("raw-bedrock-session-id", "doc-1"));
         when(documentRepository.findByUserAndDocumentId(eq(USER_ID), eq("doc-1")))

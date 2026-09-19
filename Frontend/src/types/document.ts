@@ -108,8 +108,10 @@ export interface Citation {
   mediaTimestamp: MediaTimestamp | null
 }
 
+/** `sessionId` is null when no conversation exists yet to continue - e.g. a first-turn "couldn't find
+ * anything" answer or a "do I have ...?" lookup, neither of which starts a model session. */
 export interface AskResponse {
   answer: string
-  sessionId: string
+  sessionId: string | null
   citations: Citation[]
 }

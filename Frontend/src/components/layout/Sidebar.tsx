@@ -4,7 +4,7 @@ import { COLLAPSED_WIDTH, useSidebarState } from '@/hooks/useSidebarState'
 import { cn } from '@/lib/utils'
 import { PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { useRef } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 
 /**
  * Docs/FRONTEND.md §6. Resizable (drag the right edge, or arrow keys on the handle) and
@@ -44,7 +44,9 @@ export function Sidebar({ onUploadClick }: { onUploadClick?: () => void }) {
       className="relative hidden h-screen shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-150 md:flex"
     >
       <div className={cn('flex h-14 items-center px-4', collapsed && 'justify-center px-0')}>
-        <Wordmark showText={!collapsed} />
+        <Link to="/app" aria-label="Recollect home" className="rounded-[var(--radius-md)]">
+          <Wordmark showText={!collapsed} />
+        </Link>
       </div>
 
       <div className="px-2 pb-2 pt-1">

@@ -42,3 +42,16 @@ export function formatTimestamp(ms: number): string {
   const seconds = totalSeconds % 60
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
+
+export type PreviewKind = 'image' | 'pdf' | 'doc' | 'sheet' | 'audio' | 'video' | 'other'
+
+/** Which designed preview a file gets: by media category, refined by extension for documents. */
+export function previewKind(fileName: string, mediaCategory: MediaCategory): PreviewKind {
+  if (mediaCategory === 'IMAGE') return 'image'
+  if (mediaCategory === 'AUDIO') return 'audio'
+  if (mediaCategory === 'VIDEO') return 'video'
+  const extension = fileExtension(fileName)
+  if (extension === 'PDF') return 'pdf'
+  if (extension === 'CSV' || extension === 'XLS' || extension === 'XLSX') return 'sheet'
+  return mediaCategory === 'DOCUMENT' ? 'doc' : 'other'
+}

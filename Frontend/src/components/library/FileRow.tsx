@@ -20,7 +20,7 @@ export function FileRow({ document }: { document: DocumentSummary }) {
           className="group flex w-full items-center gap-4 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-3 pr-16 text-left transition-colors hover:border-accent/50 hover:bg-surface-muted"
         >
           <div className="size-16 shrink-0 overflow-hidden rounded-[var(--radius-md)] border border-border">
-            <FileThumb documentId={document.documentId} fileName={document.fileName} mediaCategory={document.mediaCategory} />
+            <FileThumb size="sm" documentId={document.documentId} fileName={document.fileName} mediaCategory={document.mediaCategory} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-text-primary">{document.fileName}</p>

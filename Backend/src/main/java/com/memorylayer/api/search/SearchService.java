@@ -9,21 +9,11 @@ import com.memorylayer.api.dto.SearchResult;
 import com.memorylayer.api.dto.SearchResultDocument;
 import com.memorylayer.api.dto.SearchResultMatch;
 import com.memorylayer.api.error.InvalidRequestException;
-import com.memorylayer.api.error.RetrievalUnavailableException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.document.Document.ListBuilder;
-import software.amazon.awssdk.core.exception.SdkException;
-import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient;
 import software.amazon.awssdk.services.bedrockagentruntime.model.FilterAttribute;
-import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseQuery;
-import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalConfiguration;
-import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseVectorSearchConfiguration;
+import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalResult;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrievalFilter;
-import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveRequest;
-import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveResponse;
-import software.amazon.awssdk.services.bedrockagentruntime.model.ThrottlingException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,8 +26,6 @@ import java.util.List;
 @Service
 public class SearchService {
 
-    private static final Logger log = LoggerFactory.getLogger(SearchService.class);
-
     private static final int DEFAULT_LIMIT = 10;
     private static final int MAX_LIMIT = 25;
     // Multiple chunks can belong to the same document, so more raw chunks than the final
@@ -45,14 +33,12 @@ public class SearchService {
     private static final int OVERSAMPLE_FACTOR = 3;
     private static final int MAX_RAW_RESULTS = 50;
 
-    private final BedrockAgentRuntimeClient bedrockAgentRuntimeClient;
+    private final KnowledgeBaseRetriever retriever;
     private final DocumentRepository documentRepository;
-    private final String knowledgeBaseId;
 
-    public SearchService(BedrockAgentRuntimeClient bedrockAgentRuntimeClient, DocumentRepository documentRepository) {
-        this.bedrockAgentRuntimeClient = bedrockAgentRuntimeClient;
+    public SearchService(KnowledgeBaseRetriever retriever, DocumentRepository documentRepository) {
+        this.retriever = retriever;
         this.documentRepository = documentRepository;
-        this.knowledgeBaseId = System.getenv("KNOWLEDGE_BASE_ID");
     }
 
     public SearchResponse search(String userId, SearchRequest request) {
@@ -64,30 +50,12 @@ public class SearchService {
         List<MediaCategory> mediaCategories = resolveMediaCategories(request.filters());
         int numberOfResults = Math.min(limit * OVERSAMPLE_FACTOR, MAX_RAW_RESULTS);
 
-        RetrieveRequest retrieveRequest = RetrieveRequest.builder()
-                .knowledgeBaseId(knowledgeBaseId)
-                .retrievalQuery(KnowledgeBaseQuery.builder().text(request.query()).build())
-                .retrievalConfiguration(KnowledgeBaseRetrievalConfiguration.builder()
-                        .vectorSearchConfiguration(KnowledgeBaseVectorSearchConfiguration.builder()
-                                .numberOfResults(numberOfResults)
-                                .filter(buildFilter(userId, mediaCategories))
-                                .build())
-                        .build())
-                .build();
+        // The relevance gate runs inside the retriever, per chunk and *before* the document dedup
+        // below — so a query with nothing relevant yields [] rather than nearest-neighbour noise.
+        List<KnowledgeBaseRetrievalResult> relevantChunks =
+                retriever.retrieveRelevant(buildFilter(userId, mediaCategories), request.query(), numberOfResults);
 
-        RetrieveResponse response;
-        try {
-            response = bedrockAgentRuntimeClient.retrieve(retrieveRequest);
-        } catch (ThrottlingException e) {
-            log.warn("Bedrock Retrieve throttled", e);
-            throw new RetrievalUnavailableException("The service is temporarily busy. Please retry shortly.", true);
-        } catch (SdkException e) {
-            log.error("Bedrock Retrieve failed", e);
-            throw new RetrievalUnavailableException("Search is temporarily unavailable. Please try again.", false);
-        }
-
-        List<SearchResultMapper.DedupedMatch> matches =
-                SearchResultMapper.dedupeAndRank(response.retrievalResults(), limit);
+        List<SearchResultMapper.DedupedMatch> matches = SearchResultMapper.dedupeAndRank(relevantChunks, limit);
 
         List<SearchResult> results = new ArrayList<>();
         for (SearchResultMapper.DedupedMatch match : matches) {

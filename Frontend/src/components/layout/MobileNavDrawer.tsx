@@ -3,7 +3,7 @@ import { NAV_ITEMS } from '@/components/layout/navItems'
 import { useDialogA11y } from '@/hooks/useDialogA11y'
 import { cn } from '@/lib/utils'
 import { Plus, X } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 
 /** Docs/FRONTEND.md §20 — mobile falls back to a top-triggered drawer instead of the
  * resizable desktop sidebar. A real modal dialog: focus moves in, Tab is trapped, Escape closes
@@ -33,7 +33,9 @@ export function MobileNavDrawer({
         className="relative flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-surface p-3"
       >
         <div className="flex h-12 items-center justify-between px-1">
-          <Wordmark />
+          <Link to="/app" onClick={onClose} aria-label="Recollect home" className="rounded-[var(--radius-md)]">
+            <Wordmark />
+          </Link>
           <button
             type="button"
             onClick={onClose}

@@ -84,7 +84,7 @@ export function AskPage() {
 
     try {
       const response = await askQuestion({ question: trimmed, sessionId })
-      setSessionId(response.sessionId)
+      setSessionId(response.sessionId ?? undefined)
       setTurns((previous) => [
         ...previous,
         {
@@ -241,7 +241,7 @@ export function AskPage() {
             event.preventDefault()
             submit(question)
           }}
-          className="flex items-center gap-2 rounded-[var(--radius-lg)] border border-border-strong bg-surface p-2 pl-4 shadow-[var(--shadow-md)] transition-colors focus-within:border-accent"
+          className="flex items-center gap-2 rounded-[var(--radius-lg)] border border-border-strong bg-surface p-2 pl-4 shadow-[var(--shadow-md)] transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20"
         >
           <label className="flex-1">
             <span className="sr-only">Your question</span>

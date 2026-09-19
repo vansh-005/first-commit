@@ -24,7 +24,7 @@ export function SearchResultCard({ result, query = '' }: { result: SearchResult;
           className="group flex w-full items-start gap-4 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-4 pr-16 text-left transition-all hover:border-accent/50 hover:bg-surface-muted"
         >
           <div className="size-[72px] shrink-0 overflow-hidden rounded-[var(--radius-md)] border border-border">
-            <FileThumb documentId={document.documentId} fileName={document.fileName} mediaCategory={document.mediaCategory} />
+            <FileThumb size="sm" documentId={document.documentId} fileName={document.fileName} mediaCategory={document.mediaCategory} />
           </div>
 
           <div className="min-w-0 flex-1">

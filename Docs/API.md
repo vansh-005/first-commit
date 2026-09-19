@@ -690,6 +690,13 @@ Authentication:
 Required
 ```
 
+**Relevance gate (Phase 8).** A vector search always returns its nearest neighbours, however
+unrelated. Every retrieved chunk is therefore filtered by a minimum similarity score
+(`MIN_RELEVANCE_SCORE`, default `0.62`, measured — see `KnowledgeBaseRetriever`) **before**
+documents are de-duplicated. A query with nothing relevant returns `"results": []`, never
+arbitrary documents. `match.score` is still returned for ranking/debugging but is never
+shown to users or written to logs.
+
 Purpose:
 
 Find files/content based on what the user remembers.
@@ -847,6 +854,23 @@ Example:
 }
 ```
 
+**How an answer is produced (Phase 8).** Ask does not rely on `RetrieveAndGenerate` alone to decide
+whether useful context exists (it attaches every retrieved chunk even to a refusal). Each
+question first runs a preflight `Retrieve` with the same tenant filter and relevance gate as
+`/search`:
+
+- nothing relevant (first turn) -> `answer` is `"I couldn't find anything in your memories that
+  answers that."`, `citations` is `[]`, `sessionId` is `null`, and no model is called;
+- a "do I have ...?" / "find my ..." question -> answered from the relevant documents' real
+  filenames (`"I found 1 file in your memories that matches: ..."`, up to 3, each as a citation);
+  no model is called, and an existing `sessionId` is returned unchanged;
+- otherwise `RetrieveAndGenerate` runs with a custom prompt (answer only from the user's own
+  memories; say so when context is insufficient; no outside advice), restricted to the relevant
+  documents, and only citations from those documents are returned. A refusal returns no citations.
+
+Follow-up turns (a supplied `sessionId`) skip the *blocking* effect of the gate, since a follow-up
+like "and the stipend?" only scores against its conversation history.
+
 `sessionId` is an **opaque, application-issued** identifier — a backend-generated value
 previously returned from a prior `/ask` call, never the raw Bedrock session ID
 (`Docs/DATA_MODEL.md` §15). The frontend may only send a `sessionId` this API itself returned;
@@ -896,6 +920,9 @@ work, the frontend resolves a clickable source on demand through the existing,
 ownership-checked `GET /documents/{documentId}/access-url` (§17) only when the citation is
 actually clicked — not a URL pre-issued and embedded in this response, which could partially
 expire before a user reads a long answer and clicks a source later.
+
+`sessionId` is **`null`** when there is no conversation to continue (the first-turn no-answer and
+find cases above). Clients must treat `null` as "start fresh next turn".
 
 ### `ASK_SESSION_EXPIRED`
 

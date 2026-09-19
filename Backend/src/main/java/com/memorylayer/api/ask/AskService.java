@@ -9,15 +9,22 @@ import com.memorylayer.api.dto.Citation;
 import com.memorylayer.api.error.AskSessionExpiredException;
 import com.memorylayer.api.error.InvalidRequestException;
 import com.memorylayer.api.error.RetrievalUnavailableException;
+import com.memorylayer.api.dto.MediaTimestamp;
+import com.memorylayer.api.search.KnowledgeBaseRetriever;
+import com.memorylayer.api.search.RetrievalContentMapper;
 import com.memorylayer.api.search.RetrievalFilters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient;
+import software.amazon.awssdk.services.bedrockagentruntime.model.GenerationConfiguration;
 import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalConfiguration;
+import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalResult;
 import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrieveAndGenerateConfiguration;
 import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseVectorSearchConfiguration;
+import software.amazon.awssdk.services.bedrockagentruntime.model.PromptTemplate;
+import software.amazon.awssdk.services.bedrockagentruntime.model.RetrievalFilter;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveAndGenerateConfiguration;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveAndGenerateInput;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveAndGenerateRequest;
@@ -29,7 +36,11 @@ import software.amazon.awssdk.services.bedrockagentruntime.model.ValidationExcep
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -37,6 +48,23 @@ import java.util.regex.Pattern;
  * Docs/API.md §20. Uses Bedrock Knowledge Base {@code RetrieveAndGenerate} — grounded Q&A,
  * never plain generation. Every call injects {@code userId == authenticatedUserId} server-side
  * via {@link RetrievalFilters}, the same tenant-isolation filter {@code /search} uses.
+ *
+ * <p><b>Pipeline (Phase 8 correctness fix):</b> Ask no longer trusts {@code RetrieveAndGenerate}
+ * alone to decide whether useful context exists — it always attaches whatever it retrieved, even to
+ * a refusal. Every question first runs a preflight {@code Retrieve} through
+ * {@link KnowledgeBaseRetriever} (same tenant filter, same relevance gate as {@code /search}).
+ * <ol>
+ *   <li>Nothing relevant (first turn) &rarr; a deterministic no-answer, zero citations, and
+ *       {@code RetrieveAndGenerate} is <b>not called</b>.</li>
+ *   <li>A "do I have ...?" / "find my ..." question &rarr; answered from the relevant documents'
+ *       metadata ({@link FindIntent}); the model can't see filenames.</li>
+ *   <li>Otherwise {@code RetrieveAndGenerate} runs with {@link AskPrompt#TEMPLATE}, restricted to
+ *       the relevant documents, and only citations from those documents are returned.</li>
+ * </ol>
+ * Follow-up turns (an existing session) are the one exception to the gate: a follow-up such as
+ * "and the stipend?" only makes sense with conversation history, so it scores low standalone.
+ * When the gate finds nothing for a follow-up, generation still runs (tenant filter only) and a
+ * refusal has its citations dropped.
  *
  * <p><b>Session handling (Phase 6 amendment):</b> the frontend never sees or supplies a raw
  * Bedrock session ID. It only ever holds an opaque, application-issued {@code sessionId},
@@ -79,14 +107,18 @@ public class AskService {
             Pattern.compile("Session with Id .+ is not valid", Pattern.CASE_INSENSITIVE);
 
     private final BedrockAgentRuntimeClient bedrockAgentRuntimeClient;
+    private final KnowledgeBaseRetriever retriever;
     private final DocumentRepository documentRepository;
     private final AskSessionRepository askSessionRepository;
     private final String knowledgeBaseId;
     private final String askModelArn;
 
-    public AskService(BedrockAgentRuntimeClient bedrockAgentRuntimeClient, DocumentRepository documentRepository,
-                       AskSessionRepository askSessionRepository) {
+    private static final int MAX_FOUND_FILES = 3;
+
+    public AskService(BedrockAgentRuntimeClient bedrockAgentRuntimeClient, KnowledgeBaseRetriever retriever,
+                       DocumentRepository documentRepository, AskSessionRepository askSessionRepository) {
         this.bedrockAgentRuntimeClient = bedrockAgentRuntimeClient;
+        this.retriever = retriever;
         this.documentRepository = documentRepository;
         this.askSessionRepository = askSessionRepository;
         this.knowledgeBaseId = System.getenv("KNOWLEDGE_BASE_ID");
@@ -109,6 +141,26 @@ public class AskService {
             bedrockSessionId = existing.getBedrockSessionId();
         }
 
+        // Preflight: same tenant filter, same relevance gate as /search.
+        boolean followUp = bedrockSessionId != null;
+        List<RelevantDocument> relevant = RelevantDocument.fromChunks(
+                retriever.retrieveRelevant(RetrievalFilters.forUser(userId), request.question(), NUMBER_OF_RESULTS));
+
+        if (relevant.isEmpty() && !followUp) {
+            // Nothing relevant to ground an answer in: don't call the model at all.
+            return new AskResponse(AskPrompt.NO_ANSWER, applicationSessionId, List.of());
+        }
+        if (!relevant.isEmpty() && FindIntent.isFindRequest(request.question())) {
+            return findResponse(userId, applicationSessionId, relevant);
+        }
+
+        // Generation sees only the documents that passed the gate (or, for a follow-up that didn't
+        // match on its own, the user's whole corpus - see the class doc).
+        Set<String> allowedDocumentIds = relevant.isEmpty() ? null : documentIds(relevant);
+        RetrievalFilter filter = allowedDocumentIds == null
+                ? RetrievalFilters.forUser(userId)
+                : RetrievalFilters.forUserAndDocuments(userId, allowedDocumentIds);
+
         RetrieveAndGenerateRequest.Builder requestBuilder = RetrieveAndGenerateRequest.builder()
                 .input(RetrieveAndGenerateInput.builder().text(request.question()).build())
                 .retrieveAndGenerateConfiguration(RetrieveAndGenerateConfiguration.builder()
@@ -119,7 +171,12 @@ public class AskService {
                                 .retrievalConfiguration(KnowledgeBaseRetrievalConfiguration.builder()
                                         .vectorSearchConfiguration(KnowledgeBaseVectorSearchConfiguration.builder()
                                                 .numberOfResults(NUMBER_OF_RESULTS)
-                                                .filter(RetrievalFilters.forUser(userId))
+                                                .filter(filter)
+                                                .build())
+                                        .build())
+                                .generationConfiguration(GenerationConfiguration.builder()
+                                        .promptTemplate(PromptTemplate.builder()
+                                                .textPromptTemplate(AskPrompt.TEMPLATE)
                                                 .build())
                                         .build())
                                 .build())
@@ -152,17 +209,75 @@ public class AskService {
         }
 
         String resolvedApplicationSessionId = persistSessionMapping(userId, applicationSessionId, response.sessionId());
-        List<Citation> citations = resolveCitations(userId, response);
+        String answer = response.output().text();
+        // A refusal has no sources - whatever was retrieved behind it isn't evidence for anything.
+        List<Citation> citations = AskPrompt.isNoAnswer(answer)
+                ? List.of()
+                : resolveCitations(userId, response, allowedDocumentIds);
 
-        return new AskResponse(response.output().text(), resolvedApplicationSessionId, citations);
+        return new AskResponse(answer, resolvedApplicationSessionId, citations);
     }
 
-    private List<Citation> resolveCitations(String userId, RetrieveAndGenerateResponse response) {
+    /** Answers "do I have ...?" from real metadata: the relevant documents' filenames. No model call,
+     * so no Bedrock session is created or touched - an existing application session id is returned
+     * unchanged, and a first turn returns none. */
+    private AskResponse findResponse(String userId, String applicationSessionId, List<RelevantDocument> relevant) {
+        List<Citation> citations = new ArrayList<>();
+        for (RelevantDocument candidate : relevant) {
+            if (citations.size() >= MAX_FOUND_FILES) {
+                break;
+            }
+            documentRepository.findByUserAndDocumentId(userId, candidate.documentId()).ifPresent(document ->
+                    citations.add(new Citation("c" + (citations.size() + 1), document.getDocumentId(), document.getFileName(),
+                            document.getMediaCategory(), document.getMimeType(), candidate.snippet(), candidate.mediaTimestamp())));
+        }
+        if (citations.isEmpty()) {
+            return new AskResponse(AskPrompt.NO_ANSWER, applicationSessionId, List.of());
+        }
+
+        List<String> names = citations.stream().map(citation -> "\u201c" + citation.fileName() + "\u201d").toList();
+        String answer = citations.size() == 1
+                ? "I found 1 file in your memories that matches: " + names.get(0) + "."
+                : "I found " + citations.size() + " files in your memories that match: "
+                        + String.join(", ", names.subList(0, names.size() - 1)) + " and " + names.get(names.size() - 1) + ".";
+        return new AskResponse(answer, applicationSessionId, citations);
+    }
+
+    private static Set<String> documentIds(List<RelevantDocument> relevant) {
+        Set<String> ids = new LinkedHashSet<>();
+        relevant.forEach(document -> ids.add(document.documentId()));
+        return ids;
+    }
+
+    /** A document that survived the relevance gate, with the display fields of its best chunk. */
+    record RelevantDocument(String documentId, String snippet, MediaTimestamp mediaTimestamp) {
+
+        /** One entry per document, in Bedrock's descending-score order (its best chunk first). */
+        static List<RelevantDocument> fromChunks(List<KnowledgeBaseRetrievalResult> chunks) {
+            Map<String, RelevantDocument> byDocument = new LinkedHashMap<>();
+            for (KnowledgeBaseRetrievalResult chunk : chunks) {
+                RetrievalContentMapper.ChunkRef ref = RetrievalContentMapper.ChunkRef.of(chunk);
+                String documentId = RetrievalContentMapper.extractDocumentId(ref);
+                if (documentId == null || byDocument.containsKey(documentId)) {
+                    continue;
+                }
+                byDocument.put(documentId, new RelevantDocument(documentId, RetrievalContentMapper.resolveSnippet(ref),
+                        RetrievalContentMapper.resolveMediaTimestamp(ref.metadata())));
+            }
+            return List.copyOf(byDocument.values());
+        }
+    }
+
+    /** {@code allowedDocumentIds == null} means "no gate result to restrict to" (follow-up turns). */
+    private List<Citation> resolveCitations(String userId, RetrieveAndGenerateResponse response, Set<String> allowedDocumentIds) {
         List<AskCitationMapper.DedupedCitation> deduped = AskCitationMapper.dedupeCitations(response.citations());
 
         List<Citation> citations = new ArrayList<>();
         int index = 1;
         for (AskCitationMapper.DedupedCitation candidate : deduped) {
+            if (allowedDocumentIds != null && !allowedDocumentIds.contains(candidate.documentId())) {
+                continue;
+            }
             Document document = documentRepository.findByUserAndDocumentId(userId, candidate.documentId()).orElse(null);
             if (document == null) {
                 // Same defensive skip as /search: the document was deleted after indexing, or

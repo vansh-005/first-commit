@@ -58,6 +58,23 @@ describe('AskPage', () => {
     expect(askQuestion).not.toHaveBeenCalled()
   })
 
+  it('handles a first-turn answer with no session (nothing relevant found) and keeps the next turn a fresh conversation', async () => {
+    vi.mocked(askQuestion)
+      .mockResolvedValueOnce({ answer: "I couldn't find anything in your memories that answers that.", sessionId: null, citations: [] })
+      .mockResolvedValueOnce(makeResponse())
+    renderAsk()
+    const input = screen.getByPlaceholderText('Ask a question about your memory...')
+
+    await userEvent.type(input, 'How much AWS credit did I have?')
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }))
+    expect(await screen.findByText(/couldn't find anything in your memories/i)).toBeInTheDocument()
+    expect(screen.queryByText(/context checked/i)).not.toBeInTheDocument()
+
+    await userEvent.type(input, 'What did my offer say?')
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }))
+    await waitFor(() => expect(askQuestion).toHaveBeenLastCalledWith({ question: 'What did my offer say?', sessionId: undefined }))
+  })
+
   it('submits a suggested prompt with one click', async () => {
     vi.mocked(askQuestion).mockResolvedValue(makeResponse())
     renderAsk()

@@ -356,6 +356,21 @@ Things to know when touching the frontend:
   prompt-template marker + backend flag (Phase 9).
 - **Download** = fresh `/access-url` -> `fetch` -> Blob (`lib/download.ts`, `useFileActions`); needs the
   uploads bucket's CORS `GET` for the app origin (already configured). Delete is deferred to Phase 9.
+- **Deployed:** the relevance-gate/Ask-pipeline backend is live (Lambda `live` alias v15) and was verified against
+  the deployed API; verification method = invoke `memory-layer-api:live` with a synthetic API Gateway v2
+  JWT-authorizer event (no browser needed). Phase 8 remains open pending browser review.
+- **Relevance gate (backend):** all retrieval goes through `KnowledgeBaseRetriever`, which drops chunks below
+  `MIN_RELEVANCE_SCORE` (default **0.62**, measured; optional env override, no infra change needed) *before*
+  dedup. Search returns `[]` for absent topics. Ask runs a preflight `Retrieve` (same filter + gate), and
+  skips `RetrieveAndGenerate` entirely when nothing is relevant. Scores are never logged. See
+  `Docs/API.md` §18/§20.
+- **Ask prompt gotchas (verified live):** `$output_format_instructions$` must stay in the custom template or
+  citations come back with **zero** references; `$search_results$` is required; `$query$` isn't needed for
+  Nova. The LLM never sees filenames, so "do I have X?" is answered from metadata (`FindIntent`).
+- **Scanned PDFs** are indexed as page *images* (chunk `content.type=IMAGE`, empty `text`); their searchable text
+  lives in the `x-amz-bedrock-kb-description` metadata.
+- **Live verification harness:** `LiveRelevanceVerificationTest` (skipped unless `LIVE_KB=1`; needs
+  `KNOWLEDGE_BASE_ID`, `ASK_MODEL_ARN`, `LIVE_USER_A/B`, `LIVE_DOCS_JSON`). It calls the real KB read-only.
 - **Deferred:** the `/app/document/:id` detail page (still a stub). Demo data: `Docs/demo-samples/`.
 
 ---

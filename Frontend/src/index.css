@@ -39,9 +39,13 @@ html {
   scroll-behavior: smooth;
 }
 
-*:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+/* In the base layer so utilities like `focus:outline-none` can still opt a control out — inputs
+   that draw their own container focus treatment (border + faint ring) must not get a second ring. */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
 }
 
 @keyframes fade-up {
