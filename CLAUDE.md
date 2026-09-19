@@ -4,6 +4,10 @@
 
 Read `AGENTS.md` first.
 
+Then read `Docs/KNOWLEDGE_TRANSFER.md` — the operational handoff doc. It is
+the fast boot sequence for a fresh session and must be read before making
+changes.
+
 Then read the relevant files under `Docs/` before making changes:
 
 - `Docs/PRODUCT.md`
@@ -14,6 +18,12 @@ Then read the relevant files under `Docs/` before making changes:
 - `Docs/OPERATIONS.md`
 
 Treat these as the current design contract.
+
+Whenever a change affects deployed architecture, required environment
+variables, deployment commands, discovered AWS behavior, known
+incidents/gotchas, current phase status, or important operational
+procedures, update `Docs/KNOWLEDGE_TRANSFER.md` in the same task, before
+reporting the task complete.
 
 ---
 

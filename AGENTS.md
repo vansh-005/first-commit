@@ -8,6 +8,8 @@ The project is a multimodal personal memory layer. Users upload files such as PD
 
 Before making non-trivial changes, read:
 
+- `Docs/KNOWLEDGE_TRANSFER.md` (operational handoff — read this first; it is
+  the fast "what do I need to know to continue safely" boot sequence)
 - `Docs/PRODUCT.md`
 - `Docs/ARCHITECTURE.md`
 - `Docs/DATA_MODEL.md`
@@ -16,6 +18,12 @@ Before making non-trivial changes, read:
 - `Docs/OPERATIONS.md` (alarms, deployment procedure, smoke testing, stale-document handling — read before any infra deployment or operational change)
 
 These documents are the current source of truth.
+
+Whenever work changes deployed architecture, required environment
+variables, deployment commands, discovered AWS behavior, known
+incidents/gotchas, current phase status, or important operational
+procedures, update `Docs/KNOWLEDGE_TRANSFER.md` before ending the task —
+keep it short and link to the detailed doc instead of duplicating content.
 
 ---
 
