@@ -53,7 +53,7 @@ export const ARCHITECTURE_LEGEND = [
   'The browser calls API Gateway with a bearer token; a JWT authorizer validates it.',
   'A Java 21 Lambda on SnapStart serves the API. Its identity comes only from the validated token.',
   'DynamoDB holds application state: documents, ingestion jobs and Ask sessions.',
-  'The API signs presigned URLs. It never proxies file bytes.',
+  'The API signs presigned URLs; file bytes bypass the API Lambda.',
   'The browser uploads straight to S3 with that presigned URL.',
   'S3 events land in SQS, which buffers upload bursts.',
   'Background Lambdas consume the queue, reconcile status and clean up stale documents.',
@@ -66,7 +66,7 @@ export const INGESTION_LEGEND = [
   'The browser asks for upload URLs for a batch of files.',
   'The API records each document as UPLOAD_PENDING.',
   'It returns presigned PUT URLs for backend-generated keys under the caller’s prefix.',
-  'The browser uploads bytes straight to S3 — never through the API.',
+  'The browser uploads bytes straight to S3 with that URL, bypassing the API Lambda.',
   'S3 emits ObjectCreated for the users/ prefix only; staged files never re-enter the pipeline.',
   'SQS buffers and retries the events in batches.',
   'The coordinator marks documents UPLOADED.',
@@ -116,7 +116,7 @@ export const ASK_OUTCOMES: Card[] = [
   {
     icon: MessagesSquare,
     title: 'Grounded answer',
-    body: 'RetrieveAndGenerate with Nova Lite, scoped to the relevant documents, with a prompt that answers only from the user’s own files. Citations come only from those documents.',
+    body: 'RetrieveAndGenerate with Nova Lite, scoped to the relevant documents — or, for follow-ups like “explain this”, to the files already in the conversation’s context — with a prompt that answers only from the user’s own files. Citations come only from those documents.',
   },
   {
     icon: RefreshCw,
@@ -231,7 +231,7 @@ export const RELIABILITY_CARDS: Card[] = [
 
 export const DECISIONS = [
   { title: 'Lambda + SnapStart, not containers', why: 'Scales to zero with acceptable Java cold starts. ECS stays a fallback only if measured latency demands it.' },
-  { title: 'Presigned direct uploads', why: 'The backend never proxies bytes, so upload size and burstiness don’t shape the API tier.' },
+  { title: 'Presigned direct uploads', why: 'File bytes bypass the API Lambda, so upload size and burstiness don’t shape the API tier.' },
   { title: 'SQS only where work is async', why: 'It buffers ingestion. It is deliberately absent from synchronous search and Ask calls.' },
   { title: 'Bedrock Knowledge Bases, not a hand-rolled RAG', why: 'Managed parsing (including audio and video), chunking, embeddings and retrieval instead of glue code we would have to own.' },
   { title: 'S3 Vectors, not an always-on vector database', why: 'Serverless storage and query with no baseline cost and per-user metadata filtering.' },

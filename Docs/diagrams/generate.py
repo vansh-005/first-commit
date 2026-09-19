@@ -33,35 +33,36 @@ def high_level():
     )
 
     # ---- client / edge
-    d.node(40, 384, 150, 70, "Amplify Hosting", ["React SPA · CI from Git"], "muted", "Client")
+    d.node(40, 384, 178, 70, "Amplify Hosting", ["React SPA · Git CI/CD"], "muted", "Client", icon="amplify")
     d.node(40, 232, 150, 70, "Browser", ["React + TypeScript"], "node", "Client")
-    d.node(250, 92, 180, 70, "Amazon Cognito", ["Google + email sign-in", "issues JWTs"], "node", "Identity")
-    d.node(250, 232, 180, 84, "API Gateway", ["HTTP API · JWT authorizer", "30 s integration limit"], "node", "Edge")
+    d.node(250, 92, 180, 70, "Amazon Cognito", ["Google + email · JWTs"], "node", "Identity", icon="cognito")
+    d.node(250, 232, 180, 84, "API Gateway", ["HTTP API · JWT authorizer", "30 s limit"], "node", "Edge", icon="apigw")
 
     # ---- compute
-    d.node(500, 232, 220, 96, "API Lambda", ["Java 21 · SnapStart · 28 s timeout", "identity = validated JWT sub"], "primary", "Compute")
-    d.node(500, 384, 220, 150, "Background workers", ["Ingestion Coordinator", "Status Reconciler", "Stale-document Cleanup"], "node", "Lambda")
+    d.node(500, 232, 220, 96, "API Lambda", ["Java 21 · SnapStart · 28 s", "identity = validated JWT sub"], "primary", "Compute", icon="lambda")
+    d.node(500, 384, 220, 150, "Background workers", ["Ingestion Coordinator", "Status Reconciler", "Stale-document Cleanup"], "node", "Lambda", icon="lambda")
 
     # ---- state / storage
-    d.node(790, 92, 190, 86, "S3 uploads bucket", ["users/… originals", "kb/… staged files + sidecars"], "node", "Storage")
-    d.node(790, 232, 190, 70, "DynamoDB", ["single table · on-demand"], "node", "State")
-    d.node(790, 384, 190, 58, "SQS ingestion queue", ["buffers upload bursts"], "node", "Queue")
-    d.node(790, 476, 190, 58, "Dead-letter queue", ["any message raises an alarm"], "fail", "Failure")
+    d.node(790, 92, 190, 86, "S3 uploads bucket", ["users/ · originals", "kb/ · staging + sidecars"], "node", "Storage", icon="s3")
+    d.node(790, 232, 190, 70, "DynamoDB", ["single table · on-demand"], "node", "State", icon="dynamodb")
+    d.node(790, 384, 190, 58, "SQS ingestion queue", ["buffers upload bursts"], "node", "Queue", icon="sqs")
+    d.node(790, 476, 190, 58, "Dead-letter queue", ["any message raises an alarm"], "fail", "Failure", icon="sqs")
 
     # ---- Bedrock knowledge base
     d.group(1040, 78, 232, 360, "Bedrock Knowledge Base")
-    d.node(1056, 112, 200, 58, "Data Automation parser", ["kb/multimodal/ · PDFs, images,", "audio, video"], "node")
-    d.node(1056, 182, 200, 46, "Default text parser", ["kb/text/ · text documents"], "node")
+    d.icon("bedrock", 1234, 82, 26)
+    d.node(1056, 112, 200, 58, "Data Automation parser", ["kb/multimodal/ · PDF, image,", "audio, video"], "node")
+    d.node(1056, 182, 200, 46, "Default text parser", ["kb/text/ · text files"], "node")
     d.node(1056, 240, 200, 58, "Titan Text Embeddings V2", ["1024-d vectors"], "node")
-    d.node(1056, 310, 200, 58, "S3 Vectors", ["cosine similarity index", "user metadata filter"], "primary")
-    d.node(1330, 232, 130, 70, "Nova Lite", ["answers (Ask only)"], "node", "Generation")
+    d.node(1056, 310, 200, 58, "S3 Vectors", ["cosine index · tenant filter"], "primary", icon="s3-vectors")
+    d.node(1330, 232, 130, 70, "Nova Lite", ["Ask answers only"], "node", "Generation", icon="bedrock")
 
     # ---- operations band
     d.group(24, 620, 1432, 96, "Operations")
-    d.node(60, 644, 200, 56, "EventBridge", ["rate(1 min) · rate(15 min)"], "muted")
-    d.node(310, 644, 220, 56, "CloudWatch", ["structured logs · 8 alarms"], "muted")
-    d.node(580, 644, 210, 56, "SNS topic", ["alarm email"], "fail")
-    d.node(840, 644, 220, 56, "AWS CDK", ["all infrastructure as code"], "muted")
+    d.node(60, 644, 200, 56, "EventBridge", ["rate(1 min) · rate(15 min)"], "muted", icon="eventbridge")
+    d.node(310, 644, 220, 56, "CloudWatch", ["structured logs · 8 alarms"], "muted", icon="cloudwatch")
+    d.node(580, 644, 210, 56, "SNS topic", ["alarm email"], "fail", icon="sns")
+    d.node(840, 644, 220, 56, "AWS CDK", ["all infrastructure as code"], "muted", icon="cdk")
     d.text(1440, 676, "Region ap-south-1", 10.5, 500, TEXT3, anchor="end")
 
     # ---- edges
@@ -93,7 +94,7 @@ def high_level():
     d.badge(610, 560, 10)
     d.edge([(1156, 170), (1156, 182)], "secondary")
     d.edge([(1156, 298), (1156, 310)], "primary")
-    d.badge(1246, 339, 11)
+    d.badge(1056, 312, 11)
     d.edge([(1272, 267), (1330, 267)], "secondary")
     d.edge([(160, 644), (160, 600), (450, 600), (450, 468), (500, 468)], "secondary", "schedules", 300, 600)
     d.edge([(530, 672), (580, 672)], "fail")

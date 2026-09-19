@@ -8,6 +8,8 @@ Styles are written as inline `style=` attributes (no <style> block), so nothing 
 Palette rules: neutral surfaces, cobalt for the primary path, muted grey for secondary paths,
 muted red/rose ONLY for failure paths. No orange/amber.
 """
+import os
+import re
 from html import escape
 
 FONT = "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif"
@@ -65,7 +67,23 @@ class Diagram:
             f'style="fill:{fill};stroke:{stroke};stroke-width:{sw}{d}"/>'
         )
 
-    def node(self, x, y, w, h, title, subs=(), kind="node", tag=None, r=10):
+    def icon(self, name, x, y, size=26):
+        """Inline an official AWS Architecture Icon (Docs/diagrams/icons/<name>.svg) at size x size.
+
+        Icons are used as published (colours untouched). Only the outer <svg>, <title> and ids are dropped so several
+        icons can share one page without id clashes. The S3 Vectors resource icon ships without a background tile, so it
+        is drawn on the S3 category colour, matching how the service icons are built.
+        """
+        raw = open(os.path.join(os.path.dirname(__file__), "icons", f"{name}.svg"), encoding="utf8").read()
+        vb = float(re.search(r'viewBox="0 0 ([\d.]+) ', raw).group(1))
+        inner = raw[raw.index(">", raw.index("<svg")) + 1 : raw.rindex("</svg>")]
+        inner = re.sub(r"<title>.*?</title>", "", inner, flags=re.S)
+        inner = re.sub(r'\s+id="[^"]*"', "", inner)
+        if name == "s3-vectors":
+            inner = f'<rect width="{vb}" height="{vb}" fill="#7AA116"/>' + inner.replace('fill="#7AA116"', 'fill="#FFFFFF"')
+        self.parts.append(f'<g transform="translate({x},{y}) scale({size / vb:.4f})" aria-hidden="true">{inner.strip()}</g>')
+
+    def node(self, x, y, w, h, title, subs=(), kind="node", tag=None, r=10, icon=None):
         """A service box: optional small-caps tag, bold title, muted sub-lines. Text is left-aligned."""
         self.rect(x, y, w, h, kind, r)
         _, _, tc, sc, _ = KINDS[kind]
@@ -77,6 +95,8 @@ class Diagram:
         for s in subs:
             cy += 15
             self.text(x + 12, cy, s, 10.5, 400, sc)
+        if icon:
+            self.icon(icon, x + w - 36, y + 10)
 
     def group(self, x, y, w, h, label):
         self.rect(x, y, w, h, "group", r=14, sw=1)

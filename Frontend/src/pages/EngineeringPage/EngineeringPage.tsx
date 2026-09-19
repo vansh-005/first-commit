@@ -153,7 +153,7 @@ export function EngineeringPage() {
           id="architecture"
           eyebrow="High-Level Architecture"
           title="Serverless from the browser to the vector index"
-          lead="The browser gets the app from Amplify, identity from Cognito and everything else from one API. File bytes never touch the backend."
+          lead="The browser gets the app from Amplify, identity from Cognito and everything else from one API. Upload and download file bytes bypass the API Lambda."
         >
           <DiagramFigure
             svg={highLevelSvg}
@@ -183,8 +183,8 @@ export function EngineeringPage() {
         <EngineeringSection
           id="retrieval"
           eyebrow="Retrieval — Semantic Search + Grounded Ask"
-          title="Two paths, one rule: only what retrieval proves is relevant"
-          lead="Search never calls a language model. Ask only answers from documents that pass the same relevance gate — and says so when it can’t."
+          title="Two paths, one rule: answer only from your memories"
+          lead="Search uses semantic retrieval without generation. Ask first establishes relevant, user-owned context, then generates only from that context — or returns a deterministic no-answer."
         >
           <DiagramFigure
             svg={searchAskSvg}
@@ -228,7 +228,7 @@ export function EngineeringPage() {
           id="security"
           eyebrow="Security & Tenant Isolation"
           title="Tenant-isolated by design"
-          lead="Isolation is enforced on the server at every layer, so a bug in one place can’t widen what a user can reach."
+          lead="Isolation is enforced redundantly across identity, data access, retrieval filters, sessions and signed URLs."
         >
           <CardGrid cards={SECURITY_CARDS} columns={3} />
         </EngineeringSection>

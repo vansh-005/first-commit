@@ -397,6 +397,8 @@ landing header/footer ("Engineering"). Frontend-only — no backend/infra/API ch
 - The three diagrams are **generated**: `python Docs/diagrams/generate.py` (uses `diagramkit.py`) writes
   `Docs/diagrams/*.svg`. The page inlines them via Vite `?raw` (theme-adaptive CSS variables); `vite.config.ts` sets
   `server.fs.allow: ['..']` so dev can read `../Docs`. Change the diagrams by editing `generate.py`, not the SVGs.
+- Only the high-level diagram uses AWS icons: official AWS Architecture Icons (July 2026 pack), unmodified, stored in
+  `Docs/diagrams/icons/` and inlined by `Diagram.icon()`. The Upload and Search/Ask diagrams stay logical (no icons).
 - Must never show account IDs, bucket names, ARNs, Cognito IDs, emails, real user/document IDs — enforced by a scan in
   `EngineeringPage.test.tsx`. The 0.62 threshold is described as corpus-calibrated and tunable.
 - When Ask/Search/ingestion behavior changes, update `generate.py` + `content.ts` + `ARCHITECTURE.md` together.
