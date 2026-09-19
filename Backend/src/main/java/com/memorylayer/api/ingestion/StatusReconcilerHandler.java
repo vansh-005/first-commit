@@ -6,6 +6,7 @@ import com.amazonaws.services.lambda.runtime.events.ScheduledEvent;
 import com.memorylayer.api.document.Document;
 import com.memorylayer.api.document.DocumentRepository;
 import com.memorylayer.api.document.DocumentStatus;
+import com.memorylayer.api.observability.StructuredLog;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -17,6 +18,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -126,6 +128,12 @@ public class StatusReconcilerHandler implements RequestHandler<ScheduledEvent, V
         job.setUpdatedAt(now);
         job.setExpiresAt(Instant.now().plus(JOB_RECORD_RETENTION).getEpochSecond());
         ingestionJobRepository.save(job);
+
+        StructuredLog.info("ingestion_job_complete", Map.of(
+                "jobId", job.getJobId(),
+                "dataSourceId", job.getDataSourceId(),
+                "documentCount", job.getDocumentIds().size(),
+                "latencyMs", jobLatencyMs(job)));
     }
 
     private static long countFailedDocuments(GetIngestionJobResponse response) {
@@ -158,6 +166,21 @@ public class StatusReconcilerHandler implements RequestHandler<ScheduledEvent, V
         job.setUpdatedAt(now);
         job.setExpiresAt(Instant.now().plus(JOB_RECORD_RETENTION).getEpochSecond());
         ingestionJobRepository.save(job);
+
+        StructuredLog.error("ingestion_job_failed", Map.of(
+                "jobId", job.getJobId(),
+                "dataSourceId", job.getDataSourceId(),
+                "documentCount", job.getDocumentIds().size(),
+                "failureReasonCount", failureReasons.size(),
+                "latencyMs", jobLatencyMs(job)));
+    }
+
+    private static long jobLatencyMs(IngestionJob job) {
+        try {
+            return Duration.between(Instant.parse(job.getStartedAt()), Instant.now()).toMillis();
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     private Optional<Document> findDocument(String documentRef) {

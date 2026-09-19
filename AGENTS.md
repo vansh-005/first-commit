@@ -13,6 +13,7 @@ Before making non-trivial changes, read:
 - `Docs/DATA_MODEL.md`
 - `Docs/API.md`
 - `Docs/TASKS.md`
+- `Docs/OPERATIONS.md` (alarms, deployment procedure, smoke testing, stale-document handling — read before any infra deployment or operational change)
 
 These documents are the current source of truth.
 
@@ -134,6 +135,12 @@ cdk synth
 must succeed.
 
 Before deployment, inspect the proposed change set when practical.
+
+Deploy only via `Infra/deploy.ps1` (Phase 7) — it rebuilds the Backend jar, runs tests, shows
+`cdk diff`, requires explicit confirmation, and always uses `--exclusively`, specifically to
+prevent repeats of two real incidents (a stale deployed jar, and a placeholder
+`GOOGLE_OAUTH_CLIENT_ID` silently reaching a real deploy via an undeclared dependency-stack
+inclusion). See `Docs/OPERATIONS.md` §4 for the full procedure.
 
 Never delete AWS resources without explicit user approval.
 

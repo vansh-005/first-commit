@@ -555,6 +555,26 @@ No VPC is required for the MVP because all selected dependencies expose managed 
 - User requests fail cleanly if Bedrock is temporarily unavailable.
 - `/search` and `/ask` have separate timeout/error handling because `/ask` includes model generation.
 
+### Operational safety (Phase 7)
+
+- CloudWatch alarms exist for API/ingestion Lambda errors, API throttles, EventBridge failed
+  invocations, the reconciler failing to run at all (tolerant ~10-minute window), the ingestion
+  queue's oldest-message age, and any DLQ occupancy — all notifying one SNS topic. See
+  `Docs/OPERATIONS.md` §2 for exact thresholds and rationale.
+- A document stuck outside Bedrock's own tracking (`UPLOAD_PENDING`/`UPLOADED` with no
+  progress) is caught by a dedicated, separately-scheduled stale-document cleanup job — never
+  by the Status Reconciler, which remains the sole authority for `INDEXING` documents. See
+  `Docs/OPERATIONS.md` §8.
+- Deployment safeguards (a canonical `Infra/deploy.ps1` wrapper, and a CDK-level fail-fast
+  check with no silent placeholder fallback for required configuration) exist specifically
+  because two real incidents happened without them — a stale deployed jar, and a placeholder
+  Google OAuth client ID silently reaching a real deploy. See `Docs/OPERATIONS.md` §4.
+- The frontend transparently retries `GET /documents`, `GET /documents/{id}`,
+  `GET /documents/{id}/access-url`, and `POST /search` with exponential backoff on a 429/503
+  response — all idempotent reads. `POST /uploads` and `POST /ask` are never retried
+  client-side, since replaying either could create a duplicate side effect (a second Bedrock
+  session for `/ask`).
+
 ---
 
 ## 15. Cost strategy

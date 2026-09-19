@@ -38,4 +38,22 @@ class DocumentTableSchemaTest {
         assertEquals("USER#abc123", item.get("PK").s());
         assertEquals("DOC#doc-1", item.get("SK").s());
     }
+
+    /** Phase 7's {@code DocumentRepository.scanByStatus} builds a filter expression against
+     * the literal attribute name {@code "status"} — this locks in that assumption the same way
+     * the test above locks in PK/SK, rather than only discovering a mismatch at real scan time. */
+    @Test
+    void statusMapsToTheLiteralLowercaseAttributeName() {
+        TableSchema<Document> schema = TableSchema.fromBean(Document.class);
+
+        Document document = new Document();
+        document.setPk("USER#abc123");
+        document.setSk("DOC#doc-1");
+        document.setStatus(DocumentStatus.UPLOAD_PENDING);
+
+        Map<String, AttributeValue> item = schema.itemToMap(document, true);
+
+        assertTrue(item.containsKey("status"), "expected literal 'status' attribute, got keys: " + item.keySet());
+        assertEquals("UPLOAD_PENDING", item.get("status").s());
+    }
 }

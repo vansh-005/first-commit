@@ -4,12 +4,16 @@ import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.ScanEnhancedRequest;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -62,5 +66,26 @@ public class DocumentRepository {
 
         Page<Document> page = gsi1.query(requestBuilder.build()).iterator().next();
         return new DocumentPage(page.items(), DocumentCursor.encode(page.lastEvaluatedKey()));
+    }
+
+    /** Phase 7 stale-document cleanup. A full table scan filtered post-hoc by status — there is
+     * no GSI for status/time, and per the approved Phase 7 plan, adding one solely for this
+     * low-frequency (every 15 minutes), MVP-scale cleanup job is not justified. Production
+     * scale would need an indexed status+time access pattern (e.g. a GSI keyed on
+     * {@code status} with a sort key on the relevant timestamp) instead of this scan. */
+    public List<Document> scanByStatus(DocumentStatus status) {
+        Expression filterExpression = Expression.builder()
+                .expression("#status = :status")
+                .putExpressionName("#status", "status")
+                .putExpressionValue(":status", AttributeValue.builder().s(status.name()).build())
+                .build();
+
+        List<Document> results = new ArrayList<>();
+        for (Page<Document> page : table.scan(ScanEnhancedRequest.builder()
+                .filterExpression(filterExpression)
+                .build())) {
+            results.addAll(page.items());
+        }
+        return results;
     }
 }

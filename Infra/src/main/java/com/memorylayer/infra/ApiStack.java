@@ -48,6 +48,7 @@ import java.util.List;
 public class ApiStack extends Stack {
 
     private final String apiEndpoint;
+    private Function apiFunction;
     private final HttpApi httpApi;
     private final CfnIntegration integration;
     private final CfnAuthorizer authorizer;
@@ -72,7 +73,7 @@ public class ApiStack extends Stack {
                 .removalPolicy(RemovalPolicy.DESTROY)
                 .build();
 
-        Function apiFunction = Function.Builder.create(this, "ApiFunction")
+        this.apiFunction = Function.Builder.create(this, "ApiFunction")
                 .functionName("memory-layer-api")
                 .runtime(Runtime.JAVA_21)
                 .architecture(Architecture.ARM_64)
@@ -229,5 +230,10 @@ public class ApiStack extends Stack {
     /** Base API URL, consumed by FrontendStack as the frontend's VITE_API_BASE_URL. */
     public String getApiEndpoint() {
         return apiEndpoint;
+    }
+
+    /** Phase 7: consumed by AlarmsStack. */
+    public Function getApiFunction() {
+        return apiFunction;
     }
 }

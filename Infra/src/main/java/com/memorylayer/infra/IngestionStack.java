@@ -56,6 +56,10 @@ public class IngestionStack extends Stack {
 
     private String knowledgeBaseId;
     private String knowledgeBaseArn;
+    private Function coordinatorFunction;
+    private Function reconcilerFunction;
+    private Function staleCleanupFunction;
+    private Rule reconcilerScheduleRule;
 
     public IngestionStack(final Construct scope, final String id, final StackProps props, final DataStack dataStack) {
         super(scope, id, props);
@@ -285,7 +289,7 @@ public class IngestionStack extends Stack {
                 .removalPolicy(RemovalPolicy.DESTROY)
                 .build();
 
-        Function coordinatorFunction = Function.Builder.create(this, "CoordinatorFunction")
+        this.coordinatorFunction = Function.Builder.create(this, "CoordinatorFunction")
                 .functionName("memory-layer-ingestion-coordinator")
                 .runtime(Runtime.JAVA_21)
                 .architecture(Architecture.ARM_64)
@@ -340,7 +344,7 @@ public class IngestionStack extends Stack {
                 .removalPolicy(RemovalPolicy.DESTROY)
                 .build();
 
-        Function reconcilerFunction = Function.Builder.create(this, "ReconcilerFunction")
+        this.reconcilerFunction = Function.Builder.create(this, "ReconcilerFunction")
                 .functionName("memory-layer-status-reconciler")
                 .runtime(Runtime.JAVA_21)
                 .architecture(Architecture.ARM_64)
@@ -363,9 +367,49 @@ public class IngestionStack extends Stack {
                 .resources(List.of(knowledgeBase.getAttrKnowledgeBaseArn()))
                 .build());
 
-        Rule.Builder.create(this, "ReconcilerSchedule")
+        this.reconcilerScheduleRule = Rule.Builder.create(this, "ReconcilerSchedule")
                 .schedule(Schedule.rate(Duration.minutes(1)))
                 .targets(List.of(new LambdaFunction(reconcilerFunction)))
+                .build();
+
+        // --- Stale Document Cleanup Lambda + EventBridge schedule (Phase 7) -----------------
+        // Deliberately its own Lambda, handler class, and schedule — logically separate from
+        // the Status Reconciler above, which remains the sole authority for INDEXING documents
+        // (Bedrock ingestion-job status). This Lambda only ever looks at elapsed wall-clock
+        // time (and, for UPLOAD_PENDING, whether the expected S3 object exists) — see
+        // StaleDocumentPolicy for the exact thresholds. 15-minute cadence: frequent enough to
+        // catch the 30-minute/2-hour/1-hour thresholds with acceptable latency, infrequent
+        // enough that its full-table scan (Docs/DATA_MODEL.md §16 — no GSI exists for
+        // status+time, and adding one solely for this MVP-scale, low-frequency job is not
+        // justified; production scale would need one) stays cheap.
+        LogGroup staleCleanupLogGroup = LogGroup.Builder.create(this, "StaleCleanupLogGroup")
+                .logGroupName("/aws/lambda/memory-layer-stale-cleanup")
+                .retention(RetentionDays.ONE_WEEK)
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+
+        this.staleCleanupFunction = Function.Builder.create(this, "StaleCleanupFunction")
+                .functionName("memory-layer-stale-cleanup")
+                .runtime(Runtime.JAVA_21)
+                .architecture(Architecture.ARM_64)
+                .handler("com.memorylayer.api.ingestion.StaleDocumentCleanupHandler::handleRequest")
+                .code(Code.fromAsset("../Backend/target/backend.jar"))
+                .memorySize(512)
+                .timeout(Duration.seconds(60))
+                .logGroup(staleCleanupLogGroup)
+                .environment(Map.of(
+                        "TABLE_NAME", dataStack.getTable().getTableName(),
+                        "UPLOADS_BUCKET_NAME", uploadsBucket.getBucketName()))
+                .build();
+
+        dataStack.getTable().grantReadWriteData(staleCleanupFunction);
+        // Read-only, scoped to users/ — this Lambda only ever checks whether an original
+        // upload object exists, never touches kb/ staging content.
+        uploadsBucket.grantRead(staleCleanupFunction, "users/*");
+
+        Rule.Builder.create(this, "StaleCleanupSchedule")
+                .schedule(Schedule.rate(Duration.minutes(15)))
+                .targets(List.of(new LambdaFunction(staleCleanupFunction)))
                 .build();
 
         CfnOutput.Builder.create(this, "KnowledgeBaseId").value(knowledgeBase.getAttrKnowledgeBaseId()).build();
@@ -378,5 +422,22 @@ public class IngestionStack extends Stack {
 
     public String getKnowledgeBaseArn() {
         return knowledgeBaseArn;
+    }
+
+    /** Phase 7: consumed by AlarmsStack. */
+    public Function getCoordinatorFunction() {
+        return coordinatorFunction;
+    }
+
+    public Function getReconcilerFunction() {
+        return reconcilerFunction;
+    }
+
+    public Function getStaleCleanupFunction() {
+        return staleCleanupFunction;
+    }
+
+    public Rule getReconcilerScheduleRule() {
+        return reconcilerScheduleRule;
     }
 }

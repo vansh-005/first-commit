@@ -11,6 +11,7 @@ Then read the relevant files under `Docs/` before making changes:
 - `Docs/DATA_MODEL.md`
 - `Docs/API.md`
 - `Docs/TASKS.md`
+- `Docs/OPERATIONS.md`
 
 Treat these as the current design contract.
 

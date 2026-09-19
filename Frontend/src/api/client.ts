@@ -35,6 +35,32 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Retries `fn` with exponential backoff (500ms, 1000ms, 2000ms) when it throws an `ApiError`
+ * with status 429 or 503 — the two "healthy, just temporarily busy" cases (Docs/API.md's
+ * RATE_LIMITED and Bedrock upstream throttling). Any other error, or a 429/503 that still fails
+ * after 3 attempts, propagates immediately. Only used for calls that are safe to repeat
+ * (idempotent reads and search) — never wrapped around uploads or `/ask`, since a retried
+ * `/ask` could start a second Bedrock session server-side.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  const retryableStatuses = [429, 503]
+  const baseDelayMs = 500
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      const isRetryable = error instanceof ApiError && retryableStatuses.includes(error.status)
+      if (!isRetryable || attempt === maxAttempts) {
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** (attempt - 1)))
+    }
+  }
+  // Unreachable: the loop always either returns or throws.
+  throw new Error('withRetry: exhausted attempts without returning or throwing')
+}
+
 async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const user = await userManager.getUser()
   if (!user?.access_token) {
@@ -104,7 +130,7 @@ export interface ListDocumentsParams {
   status?: DocumentStatus
 }
 
-/** Docs/API.md §15. */
+/** Docs/API.md §15. Retried with backoff on 429/503 — a safe, idempotent read. */
 export async function listDocuments(params: ListDocumentsParams = {}): Promise<DocumentsListResponse> {
   const query = new URLSearchParams()
   if (params.limit) query.set('limit', String(params.limit))
@@ -113,30 +139,39 @@ export async function listDocuments(params: ListDocumentsParams = {}): Promise<D
   if (params.status) query.set('status', params.status)
   const queryString = query.toString()
 
-  const response = await authorizedFetch(`/api/v1/documents${queryString ? `?${queryString}` : ''}`)
-  return (await response.json()) as DocumentsListResponse
-}
-
-/** Docs/API.md §16. */
-export async function getDocument(documentId: string): Promise<DocumentSummary> {
-  const response = await authorizedFetch(`/api/v1/documents/${encodeURIComponent(documentId)}`)
-  return (await response.json()) as DocumentSummary
-}
-
-/** Docs/API.md §17. */
-export async function getAccessUrl(documentId: string): Promise<AccessUrlResponse> {
-  const response = await authorizedFetch(`/api/v1/documents/${encodeURIComponent(documentId)}/access-url`)
-  return (await response.json()) as AccessUrlResponse
-}
-
-/** Docs/API.md §18. Uses Retrieve server-side — never RetrieveAndGenerate. */
-export async function searchDocuments(request: SearchRequest): Promise<SearchResponse> {
-  const response = await authorizedFetch('/api/v1/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
+  return withRetry(async () => {
+    const response = await authorizedFetch(`/api/v1/documents${queryString ? `?${queryString}` : ''}`)
+    return (await response.json()) as DocumentsListResponse
   })
-  return (await response.json()) as SearchResponse
+}
+
+/** Docs/API.md §16. Retried with backoff on 429/503 — a safe, idempotent read. */
+export async function getDocument(documentId: string): Promise<DocumentSummary> {
+  return withRetry(async () => {
+    const response = await authorizedFetch(`/api/v1/documents/${encodeURIComponent(documentId)}`)
+    return (await response.json()) as DocumentSummary
+  })
+}
+
+/** Docs/API.md §17. Retried with backoff on 429/503 — a safe, idempotent read. */
+export async function getAccessUrl(documentId: string): Promise<AccessUrlResponse> {
+  return withRetry(async () => {
+    const response = await authorizedFetch(`/api/v1/documents/${encodeURIComponent(documentId)}/access-url`)
+    return (await response.json()) as AccessUrlResponse
+  })
+}
+
+/** Docs/API.md §18. Uses Retrieve server-side — never RetrieveAndGenerate. Retried with
+ * backoff on 429/503 — a search query has no side effects, so repeating it is safe. */
+export async function searchDocuments(request: SearchRequest): Promise<SearchResponse> {
+  return withRetry(async () => {
+    const response = await authorizedFetch('/api/v1/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    return (await response.json()) as SearchResponse
+  })
 }
 
 /** Docs/API.md §20. Uses RetrieveAndGenerate. `sessionId`, when present, must be a value this

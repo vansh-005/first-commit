@@ -687,18 +687,122 @@ ask -> grounded answer -> citation -> source file
 
 # Phase 7 — Reliability and observability
 
-- [ ] CloudWatch structured logs for API
-- [ ] CloudWatch structured logs for ingestion
-- [ ] API latency visibility
-- [ ] Bedrock latency logging
-- [ ] SQS DLQ visibility
-- [ ] Clear frontend retry UX
-- [ ] Handle `429`
-- [ ] Handle Bedrock upstream errors
-- [ ] Handle expired presigned URLs
-- [ ] Handle unsupported file types
-- [ ] Handle processing failures
-- [ ] Demo smoke-test checklist
+Scope was narrowed by explicit approval to operational resilience and safety — not new product
+features. See `Docs/OPERATIONS.md` for the full operational reference this phase produced.
+
+- [x] CloudWatch structured logs for API — `RequestLoggingInterceptor` emits one `api_request`
+  JSON line per request (`requestId`, `method`, `path`, `status`, `durationMs`, best-effort
+  `userIdHash`); `ApiExceptionHandler` emits `api_error` for every handled exception type, using
+  the same `requestId` already returned to the client in the error envelope
+- [x] CloudWatch structured logs for ingestion — `IngestionCoordinatorHandler` and
+  `StatusReconcilerHandler` emit structured events for staging, job start, job completion,
+  job failure, and conflict/error cases (`document_staged`, `ingestion_job_started`,
+  `ingestion_job_complete`, `ingestion_job_failed`, `ingestion_job_conflict`,
+  `coordinator_message_failed`, `ingestion_job_start_failed`)
+- [x] API latency visibility — `durationMs` on every `api_request` structured log line
+- [x] Bedrock latency logging — `latencyMs` on `ingestion_job_complete`/`ingestion_job_failed`
+  (job-level, computed from the job's `startedAt`); no separate per-Bedrock-call latency metric
+  was added beyond this, since `/search` and `/ask` latency is already covered by API latency
+  visibility above
+- [x] SQS DLQ visibility — `IngestionDlqVisible` CloudWatch alarm (any visible message is
+  anomalous), plus `Docs/OPERATIONS.md` §3 inspection/redrive procedure
+- [x] Clear frontend retry UX — `withRetry` in `Frontend/src/api/client.ts` transparently
+  retries `listDocuments`/`getDocument`/`getAccessUrl`/`searchDocuments` on `429`/`503` with
+  exponential backoff (3 attempts, 500ms/1000ms/2000ms), exactly matching `Docs/API.md` §24's
+  safe-retry list; `initUploads`/`askQuestion` are deliberately never retried client-side
+- [x] Handle `429` — covered by the frontend retry above; a `429` that survives all retries (or
+  from `/ask`, which is never retried) still surfaces the existing `RATE_LIMITED` error message
+  through the pre-existing generic error display
+- [x] Handle Bedrock upstream errors — pre-existing `RetrievalUnavailableException` handling
+  (Phases 5/6) covers this; Phase 7 added `503` to the frontend's retryable-status list
+  alongside `429` so a transient Bedrock throttle also gets a transparent retry
+- [ ] Handle expired presigned URLs — **not addressed this phase.** Out of scope: the approved
+  plan focused on server-side operational safety and did not call out presigned URL expiry
+  handling as an amendment; still open for a later phase if it proves to matter
+- [ ] Handle unsupported file types — **not addressed this phase**, same reasoning as above
+- [x] Handle processing failures — new stale-document cleanup job (see below) catches documents
+  that fail *silently* (no error, just stuck); documents that fail loudly already transition to
+  `FAILED` via the existing Phase 4 error handling
+- [x] Demo smoke-test checklist — `Infra/smoke-test.ps1` plus `Docs/OPERATIONS.md` §6
+
+### New in Phase 7 (beyond the original stub above)
+
+- [x] CloudWatch alarms — `Infra/src/main/java/com/memorylayer/infra/AlarmsStack.java`, one new
+  CDK stack, one SNS topic (`memory-layer-alarms`) with a single email subscription, 8 alarms
+  covering API errors/throttles, coordinator/reconciler errors, EventBridge failed invocations,
+  reconciler-not-running (tolerant ~10-minute window), SQS oldest-message age, and DLQ
+  occupancy. Method names for every CDK metric/alarm/action call were verified via `javap`
+  against the real `aws-cdk-lib` jar before use, including the non-obvious finding that `IRule`
+  exposes no metric convenience methods at all. Covered by `AlarmsStackTest` (8 tests, all
+  passing) — including a fixed `Match.arrayWith`/`Match.anyValue()` nesting bug found only by
+  running the test
+- [x] Stale-document handling — `StaleDocumentPolicy` (pure threshold logic, 12 unit tests) +
+  `StaleDocumentCleanupHandler` (new Lambda, `rate(15 minutes)` schedule, deliberately separate
+  from the Status Reconciler): `UPLOAD_PENDING` past 30 minutes with no S3 object → `FAILED`;
+  `UPLOADED` past 2 hours → `FAILED` (auto-fail, per explicit user decision — see
+  `Docs/OPERATIONS.md` §8 rationale on the ~100-minute normal SQS backpressure budget);
+  `INDEXING` past 1 hour → structured warning only, Bedrock job status remains sole authority.
+  Uses a full `DynamoDB` table scan filtered by status (`DocumentRepository.scanByStatus`) —
+  documented in `Docs/OPERATIONS.md` §8 "Scale note" as an MVP-scale tradeoff; a new GSI was
+  deliberately not added for this low-frequency job per the approved plan
+- [x] **Review fix**: stale-`UPLOADED` cleanup now checks the document is not covered by a
+  still-running (`STARTING`/`IN_PROGRESS`) ingestion job before auto-failing it —
+  `StaleDocumentPolicy.activeJobDocumentRefs`, guarded in `StaleDocumentCleanupHandler.checkUploaded`.
+  Without this, a document whose own `INDEXING` status write failed (a real, if rare, race —
+  see `IngestionCoordinatorHandler.startJobFor`'s Javadoc) but whose content Bedrock was still
+  actively indexing would have been wrongly marked `FAILED`. Regression-tested in the new
+  `StaleDocumentCleanupHandlerTest` (4 tests: active-job skip, no-job auto-fail, terminal-job
+  auto-fail — a documented separate limitation, see `Docs/OPERATIONS.md` §8 "Known limitation" —
+  and the pre-existing `UPLOAD_PENDING` behavior unchanged) plus 3 new
+  `StaleDocumentPolicyTest` cases for the set-builder itself
+- [x] Deployment safeguards (both requested layers) — `Infra/deploy.ps1` (rebuilds the backend
+  jar, runs Backend+Infra tests, shows `cdk diff`, requires typed confirmation, always uses
+  `--exclusively`) and a CDK-level fail-fast in `InfraApp.requireEnv` (hard `IllegalStateException`
+  for `GOOGLE_OAUTH_CLIENT_ID` or `ALARM_EMAIL` unset — no silent placeholder fallback, live
+  -verified to fail synth for each). Both target the exact two real Phase 5 incidents (stale
+  jar; placeholder Google client ID silently reaching a real deploy via an undeclared
+  dependency-stack inclusion)
+- [x] `Docs/OPERATIONS.md` — new document covering alarms, DLQ inspection/redrive, deployment
+  procedure, structured logging fields, smoke testing, frontend retry behavior, and
+  stale-document handling
+
+### Explicitly out of scope this phase (per approval)
+
+CloudWatch Synthetics, X-Ray, and any new product feature. Presigned-URL-expiry and
+unsupported-file-type handling were left open (see above) rather than silently implemented
+beyond what the approved plan called for.
+
+### Validation performed
+
+- Backend: `mvn test` — all tests green, including 12 `StaleDocumentPolicyTest` cases, 4 new
+  `StaleDocumentCleanupHandlerTest` cases (the review-requested active-job regression coverage),
+  5 `StructuredLogTest` cases, and the `DocumentTableSchemaTest` status-attribute-name case
+- Infra: `mvn test` — all tests green, including 8 new `AlarmsStackTest` cases
+- Infra: `cdk synth` — succeeds with `GOOGLE_OAUTH_CLIENT_ID`/`ALARM_EMAIL` set; confirmed it
+  fails fast (before any AWS call) with a clear message when either is unset
+- Frontend: `tsc --noEmit`, `vite build`, and `vitest run` (31 tests across 9 files, including 3
+  new `client.test.ts` cases for the retry helper) — all green
+- `Infra/smoke-test.ps1` — live-tested three times against the real deployed API: happy path
+  (200 on `/health`), bad base URL (404, confirms failure path), and a garbage bearer token
+  (genuine `401`s from the real API Gateway JWT authorizer on all three authenticated routes)
+- `Infra/deploy.ps1` — reviewed only, **not executed** (it performs a real deploy)
+
+### Not yet done (explicit — awaiting review before deployment)
+
+- [ ] Live deployment of `MemoryLayerAlarmsStack`, and the `MemoryLayerIngestionStack`/
+  `MemoryLayerApiStack` changes from this phase (new stale-cleanup Lambda; structured
+  logging/exception-handler changes) — **intentionally not deployed**, per explicit instruction
+  to stop before deployment for review
+- [ ] SNS email subscription confirmation (`vansharcade324@gmail.com`) — happens automatically
+  on first deploy of `MemoryLayerAlarmsStack`; requires manually clicking the confirmation link
+- [ ] Post-deploy live verification: confirm each of the 8 alarms shows `OK` state, confirm the
+  stale-cleanup schedule actually fires every 15 minutes, re-run `Infra/smoke-test.ps1` against
+  the redeployed API
+
+### Phase 7 exit condition
+
+All code implemented and validated locally (backend, infra, frontend). **Not yet deployed** —
+stopping here for review per explicit instruction before any `cdk deploy`.
 
 ---
 

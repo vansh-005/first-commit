@@ -22,12 +22,15 @@ public class InfraApp {
                 .region("ap-south-1")
                 .build();
 
-        String googleClientId = System.getenv("GOOGLE_OAUTH_CLIENT_ID");
-        if (googleClientId == null || googleClientId.isBlank()) {
-            // Synth-only placeholder: real deploy requires the real env var (not sensitive,
-            // but deliberately kept out of source so nothing has to be edited to deploy).
-            googleClientId = "placeholder-google-client-id";
-        }
+        // Phase 7: no silent placeholder fallback. A missing env var used to silently
+        // synthesize "placeholder-google-client-id", which was then actually deployed to the
+        // real Cognito Google identity provider during a Phase 5 incident (cdk deploy pulled
+        // AuthStack in as an undeclared dependency of another stack) — briefly breaking Google
+        // Sign-In. Failing synth loudly is strictly the better failure mode: there is no
+        // legitimate reason to synthesize this stack against the real account without the
+        // real value.
+        String googleClientId = requireEnv("GOOGLE_OAUTH_CLIENT_ID");
+        String alarmEmail = requireEnv("ALARM_EMAIL");
 
         AuthStack authStack = new AuthStack(app, "MemoryLayerAuthStack",
                 StackProps.builder().env(env).build(), AMPLIFY_ORIGIN, googleClientId);
@@ -47,6 +50,24 @@ public class InfraApp {
                 StackProps.builder().env(env).build(),
                 apiStack.getApiEndpoint(), authStack);
 
+        // Phase 7: constructed last — depends on resources from both ApiStack and
+        // IngestionStack (Lambda functions, the reconciler's schedule Rule, the ingestion
+        // queue/DLQ from DataStack).
+        new AlarmsStack(app, "MemoryLayerAlarmsStack",
+                StackProps.builder().env(env).build(), apiStack, ingestionStack, dataStack, alarmEmail);
+
         app.synth();
+    }
+
+    /** Fails synth immediately, with a clear message naming the missing variable, rather than
+     * ever silently substituting a value that must never reach a real deployment. */
+    private static String requireEnv(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(
+                    "Required environment variable " + name + " is not set. Refusing to synthesize "
+                            + "with a silent placeholder — see Docs/OPERATIONS.md for the deploy procedure.");
+        }
+        return value;
     }
 }

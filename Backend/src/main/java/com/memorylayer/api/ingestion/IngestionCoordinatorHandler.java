@@ -11,6 +11,7 @@ import com.memorylayer.api.document.DocumentKeys;
 import com.memorylayer.api.document.DocumentRepository;
 import com.memorylayer.api.document.DocumentStatus;
 import com.memorylayer.api.document.KbParsingPath;
+import com.memorylayer.api.observability.StructuredLog;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -108,6 +109,9 @@ public class IngestionCoordinatorHandler implements RequestHandler<SQSEvent, SQS
                 stageMessage(message, documentsByPath, messageIdsByPath);
             } catch (Exception e) {
                 context.getLogger().log("Failed to process message " + message.getMessageId() + ": " + e);
+                StructuredLog.error("coordinator_message_failed", Map.of(
+                        "messageId", message.getMessageId(),
+                        "errorType", e.getClass().getSimpleName()));
                 failures.add(SQSBatchResponse.BatchItemFailure.builder()
                         .withItemIdentifier(message.getMessageId())
                         .build());
@@ -128,6 +132,9 @@ public class IngestionCoordinatorHandler implements RequestHandler<SQSEvent, SQS
                 // failure worth exhausting the DLQ retry budget over.
                 context.getLogger().log("Ingestion job busy for data source " + dataSourceId
                         + "; " + documents.size() + " document(s) will retry.");
+                StructuredLog.warn("ingestion_job_conflict", Map.of(
+                        "dataSourceId", dataSourceId,
+                        "documentCount", documents.size()));
                 failMessages(messageIdsByPath.get(path), failures);
             } catch (RuntimeException e) {
                 // Any other failure (throttling, a transient AWS error, an unexpected
@@ -140,6 +147,10 @@ public class IngestionCoordinatorHandler implements RequestHandler<SQSEvent, SQS
                 // for documents that already have one in flight).
                 context.getLogger().log("Failed to start ingestion job for data source " + dataSourceId
                         + ": " + e + "; " + documents.size() + " document(s) will retry.");
+                StructuredLog.error("ingestion_job_start_failed", Map.of(
+                        "dataSourceId", dataSourceId,
+                        "documentCount", documents.size(),
+                        "errorType", e.getClass().getSimpleName()));
                 failMessages(messageIdsByPath.get(path), failures);
             }
         }
@@ -186,6 +197,10 @@ public class IngestionCoordinatorHandler implements RequestHandler<SQSEvent, SQS
 
             KbParsingPath path = KbParsingPath.fromFileName(document.getFileName());
             kbStagingService.stage(document, path);
+            StructuredLog.info("document_staged", Map.of(
+                    "documentId", document.getDocumentId(),
+                    "userIdHash", StructuredLog.hashUserId(document.getUserId()),
+                    "path", path.name()));
 
             documentsByPath.computeIfAbsent(path, p -> new ArrayList<>()).add(document);
             messageIdsByPath.computeIfAbsent(path, p -> new ArrayList<>()).add(message.getMessageId());
@@ -239,6 +254,11 @@ public class IngestionCoordinatorHandler implements RequestHandler<SQSEvent, SQS
         job.setStartedAt(now);
         job.setUpdatedAt(now);
         ingestionJobRepository.save(job);
+
+        StructuredLog.info("ingestion_job_started", Map.of(
+                "jobId", jobId,
+                "dataSourceId", dataSourceId,
+                "documentCount", documents.size()));
 
         for (Document document : documents) {
             markIndexing(document, jobId, now);
