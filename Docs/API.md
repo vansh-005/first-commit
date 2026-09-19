@@ -820,7 +820,9 @@ Purpose:
 
 Generate an answer grounded in the user's indexed memories.
 
-This endpoint uses Bedrock Knowledge Base `RetrieveAndGenerate`.
+This endpoint uses Bedrock Knowledge Base `RetrieveAndGenerate`, retrieving a fixed 8 grounding
+chunks per question. Unlike `/search`, this count is not client-configurable and there is no
+`filters`/`limit` field on the request.
 
 Example:
 
@@ -841,13 +843,18 @@ Example:
 ```json
 {
   "question": "Was there a repayment condition?",
-  "sessionId": "bedrock-session-id-returned-earlier"
+  "sessionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 }
 ```
 
-The frontend may only send a `sessionId` that the backend previously returned from Bedrock.
-
-The application does not invent its own Bedrock session IDs.
+`sessionId` is an **opaque, application-issued** identifier — a backend-generated value
+previously returned from a prior `/ask` call, never the raw Bedrock session ID
+(`Docs/DATA_MODEL.md` §15). The frontend may only send a `sessionId` this API itself returned;
+it never invents one, and it never sees Bedrock's own session identifier at all. On a follow-up,
+the backend resolves the supplied `sessionId` to the underlying Bedrock session **under the
+authenticated user's own DynamoDB partition** before calling Bedrock — a `sessionId` belonging
+to a different user (or already expired) simply does not resolve. See `ASK_SESSION_EXPIRED`
+below for what happens then.
 
 ### Server-side retrieval filter
 
@@ -857,31 +864,63 @@ Every `/ask` request injects:
 userId == authenticated JWT.sub
 ```
 
-before invoking Bedrock.
+before invoking Bedrock — the identical filter mechanism `/search` uses.
 
 ### Response
 
 ```json
 {
   "answer": "The document states that ...",
-  "sessionId": "bedrock-session-id",
+  "sessionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
   "citations": [
     {
       "citationId": "c1",
       "documentId": "550e8400-e29b-41d4-a716-446655440000",
       "fileName": "internship-offer.pdf",
+      "mediaCategory": "DOCUMENT",
+      "mimeType": "application/pdf",
       "snippet": "Relevant source excerpt...",
-      "accessUrl": "https://temporary-presigned-s3-url",
-      "accessUrlExpiresAt": "2026-09-18T03:30:00Z",
       "mediaTimestamp": null
     }
   ]
 }
 ```
 
-Citations are mapped from Bedrock source references to application documents.
+Citations are mapped from Bedrock source references back to application `documentId`s, the
+same way `/search` results are (§18) — deduplicated by `(documentId, mediaTimestamp)` rather
+than `documentId` alone, so an answer citing two different moments of the same audio/video file
+keeps both.
 
-Before generating every citation URL, the backend performs the same ownership checks as `/documents/{id}/access-url`.
+**Citations deliberately carry no `accessUrl`.** Consistent with how `/search` results already
+work, the frontend resolves a clickable source on demand through the existing,
+ownership-checked `GET /documents/{documentId}/access-url` (§17) only when the citation is
+actually clicked — not a URL pre-issued and embedded in this response, which could partially
+expire before a user reads a long answer and clicks a source later.
+
+### `ASK_SESSION_EXPIRED`
+
+If the supplied `sessionId` doesn't resolve under the authenticated user's partition, or the
+Bedrock session it pointed to is rejected as invalid/expired, the backend does **not**
+transparently retry the question without conversational history. It deletes the session mapping
+and responds:
+
+```http
+409 Conflict
+```
+
+```json
+{
+  "error": {
+    "code": "ASK_SESSION_EXPIRED",
+    "message": "This conversation has expired. Please start a new one.",
+    "requestId": "request-id",
+    "retryable": false
+  }
+}
+```
+
+The frontend should start a new conversation (omit `sessionId` on the next request) rather than
+retry with the same one.
 
 ---
 

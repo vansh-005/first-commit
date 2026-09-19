@@ -44,7 +44,8 @@ class ApiStackTest {
                 "GET /api/v1/documents",
                 "GET /api/v1/documents/{documentId}",
                 "GET /api/v1/documents/{documentId}/access-url",
-                "POST /api/v1/search")) {
+                "POST /api/v1/search",
+                "POST /api/v1/ask")) {
             template.hasResourceProperties("AWS::ApiGatewayV2::Route", Match.objectLike(Map.of(
                     "RouteKey", routeKey,
                     "AuthorizationType", "JWT",
@@ -80,6 +81,23 @@ class ApiStackTest {
                 "PolicyDocument", Match.objectLike(Map.of(
                         "Statement", Match.arrayWith(List.of(Match.objectLike(Map.of(
                                 "Action", "bedrock:Retrieve"
+                        ))))
+                ))
+        )));
+
+        // Phase 6: the Lambda role must be able to call RetrieveAndGenerate, as its own
+        // statement scoped to Resource: "*" — not folded into the Retrieve statement above and
+        // not scoped to the Knowledge Base ARN, per current AWS Knowledge Bases IAM
+        // documentation (the call also invokes the configured model/inference profile, a
+        // separate resource from the Knowledge Base itself). GetInferenceProfile/InvokeModel*
+        // were added after a live AccessDeniedException during Phase 6 verification —
+        // RetrieveAndGenerate against a cross-region inference profile also resolves/invokes
+        // the profile itself.
+        template.hasResourceProperties("AWS::IAM::Policy", Match.objectLike(Map.of(
+                "PolicyDocument", Match.objectLike(Map.of(
+                        "Statement", Match.arrayWith(List.of(Match.objectLike(Map.of(
+                                "Action", Match.arrayWith(List.of("bedrock:RetrieveAndGenerate", "bedrock:GetInferenceProfile")),
+                                "Resource", "*"
                         ))))
                 ))
         )));

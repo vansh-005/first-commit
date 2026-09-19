@@ -87,3 +87,29 @@ export interface SearchResponse {
   query: string
   results: SearchResult[]
 }
+
+/** Docs/API.md §20. `sessionId` is an opaque, application-issued identifier previously
+ * returned from a prior /ask call — never a raw Bedrock session ID. Omit it to start a new
+ * conversation. */
+export interface AskRequest {
+  question: string
+  sessionId?: string
+}
+
+/** Deliberately has no `accessUrl` — resolve a clickable source through the existing
+ * `/documents/{id}/access-url`, the same way search results already do. */
+export interface Citation {
+  citationId: string
+  documentId: string
+  fileName: string
+  mediaCategory: MediaCategory
+  mimeType: string
+  snippet: string
+  mediaTimestamp: MediaTimestamp | null
+}
+
+export interface AskResponse {
+  answer: string
+  sessionId: string
+  citations: Citation[]
+}

@@ -33,7 +33,9 @@ import java.util.List;
  * from Docs/API.md §10/15-17, all behind the same authorizer + `memory-api/access` scope.
  * Phase 5 adds semantic search (`/api/v1/search`, Docs/API.md §18), which needs a reference to
  * the Knowledge Base created in {@code IngestionStack} — hence the added constructor
- * parameter and {@code InfraApp} now constructing that stack before this one.
+ * parameter and {@code InfraApp} now constructing that stack before this one. Phase 6 adds
+ * grounded Q&A (`/api/v1/ask`, Docs/API.md §20) on the same Knowledge Base via
+ * {@code RetrieveAndGenerate}.
  *
  * <p>The Lambda integration/route are wired with the stable L1 constructs
  * ({@code CfnIntegration}/{@code CfnRoute}) rather than the {@code HttpLambdaIntegration} L2:
@@ -54,6 +56,16 @@ public class ApiStack extends Stack {
                      final AuthStack authStack, final DataStack dataStack, final IngestionStack ingestionStack) {
         super(scope, id, props);
 
+        // Phase 6: the generation model for POST /api/v1/ask. Amazon Nova Lite via the APAC
+        // cross-region inference profile — confirmed live during Phase 6 planning: Anthropic
+        // models on this account require a separate, manual "model use case details" form
+        // (account-level, outside CDK's control, and observed to fail intermittently even when
+        // filled out), while Nova Lite has no such gate and produced accurate grounded answers
+        // in live testing against the deployed Knowledge Base. Same APAC cross-region pattern
+        // Phase 4 found required for BDA invocation from ap-south-1.
+        String askModelArn = "arn:aws:bedrock:" + this.getRegion() + ":" + this.getAccount()
+                + ":inference-profile/apac.amazon.nova-lite-v1:0";
+
         LogGroup logGroup = LogGroup.Builder.create(this, "ApiFunctionLogGroup")
                 .logGroupName("/aws/lambda/memory-layer-api")
                 .retention(RetentionDays.ONE_WEEK)
@@ -72,7 +84,8 @@ public class ApiStack extends Stack {
                 .environment(java.util.Map.of(
                         "TABLE_NAME", dataStack.getTable().getTableName(),
                         "UPLOADS_BUCKET_NAME", dataStack.getUploadsBucket().getBucketName(),
-                        "KNOWLEDGE_BASE_ID", ingestionStack.getKnowledgeBaseId()))
+                        "KNOWLEDGE_BASE_ID", ingestionStack.getKnowledgeBaseId(),
+                        "ASK_MODEL_ARN", askModelArn))
                 // SnapStart only restores from a published version, never $LATEST.
                 .snapStart(SnapStartConf.ON_PUBLISHED_VERSIONS)
                 .build();
@@ -91,6 +104,27 @@ public class ApiStack extends Stack {
                 .effect(Effect.ALLOW)
                 .actions(List.of("bedrock:Retrieve"))
                 .resources(List.of(ingestionStack.getKnowledgeBaseArn()))
+                .build());
+        // Phase 6: POST /api/v1/ask's RetrieveAndGenerate calls. Kept as a separate statement
+        // from Retrieve above, deliberately not scoped to the Knowledge Base ARN — current AWS
+        // documentation for Bedrock Knowledge Bases requires bedrock:RetrieveAndGenerate to be
+        // granted against Resource: "*", since the call also invokes the configured foundation
+        // model/inference profile (a separate resource from the Knowledge Base itself).
+        //
+        // bedrock:GetInferenceProfile and bedrock:InvokeModel*/were added after a live
+        // AccessDeniedException ("Not authorized to call GetInferenceProfile for
+        // arn:aws:bedrock:ap-south-1:<account>:inference-profile/apac.amazon.nova-lite-v1:0")
+        // during Phase 6 verification: RetrieveAndGenerate against a cross-region inference
+        // profile (ASK_MODEL_ARN) also resolves/invokes the profile itself, which
+        // bedrock:RetrieveAndGenerate alone does not cover.
+        apiFunction.addToRolePolicy(PolicyStatement.Builder.create()
+                .effect(Effect.ALLOW)
+                .actions(List.of(
+                        "bedrock:RetrieveAndGenerate",
+                        "bedrock:GetInferenceProfile",
+                        "bedrock:InvokeModel",
+                        "bedrock:InvokeModelWithResponseStream"))
+                .resources(List.of("*"))
                 .build());
 
         Alias liveAlias = Alias.Builder.create(this, "ApiFunctionLiveAlias")
@@ -146,6 +180,9 @@ public class ApiStack extends Stack {
 
         // Phase 5: semantic search (Docs/API.md §18) — Retrieve only, never RetrieveAndGenerate.
         addProtectedRoute("Search", "POST", "/api/v1/search");
+
+        // Phase 6: grounded Q&A (Docs/API.md §20) — RetrieveAndGenerate.
+        addProtectedRoute("Ask", "POST", "/api/v1/ask");
 
         liveAlias.addPermission("ApiGatewayInvokeHealth", Permission.builder()
                 .principal(new ServicePrincipal("apigateway.amazonaws.com"))

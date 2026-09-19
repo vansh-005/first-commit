@@ -39,8 +39,8 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
-    @ExceptionHandler(SearchUnavailableException.class)
-    public ResponseEntity<ErrorResponse> handleSearchUnavailable(SearchUnavailableException ex) {
+    @ExceptionHandler(RetrievalUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleRetrievalUnavailable(RetrievalUnavailableException ex) {
         HttpStatus status = ex.isRetryable() ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.BAD_GATEWAY;
         String code = ex.isRetryable() ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE";
         ErrorResponse body = new ErrorResponse(new ErrorResponse.ErrorBody(
@@ -49,6 +49,16 @@ public class ApiExceptionHandler {
                 UUID.randomUUID().toString(),
                 ex.isRetryable()));
         return ResponseEntity.status(status).body(body);
+    }
+
+    @ExceptionHandler(AskSessionExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleAskSessionExpired() {
+        ErrorResponse body = new ErrorResponse(new ErrorResponse.ErrorBody(
+                "ASK_SESSION_EXPIRED",
+                "This conversation has expired. Please start a new one.",
+                UUID.randomUUID().toString(),
+                false));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(Exception.class)

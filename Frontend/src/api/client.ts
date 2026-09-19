@@ -1,6 +1,8 @@
 import { userManager } from '@/auth/userManager'
 import type {
   AccessUrlResponse,
+  AskRequest,
+  AskResponse,
   DocumentsListResponse,
   DocumentSummary,
   MediaCategory,
@@ -18,6 +20,21 @@ if (!API_BASE_URL) {
   console.warn('VITE_API_BASE_URL is not set; API calls will fail.')
 }
 
+/** Carries the HTTP status and Docs/API.md §6 machine-readable error code (when the response
+ * body parsed as that envelope) — callers that need to react to a specific failure (e.g.
+ * Ask's ASK_SESSION_EXPIRED) can check `.code`/`.status` instead of string-matching `.message`. */
+export class ApiError extends Error {
+  status: number
+  code?: string
+
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
 async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const user = await userManager.getUser()
   if (!user?.access_token) {
@@ -31,7 +48,14 @@ async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Re
     },
   })
   if (!response.ok) {
-    throw new Error(`${path} failed with status ${response.status}`)
+    const fallbackMessage = `${path} failed with status ${response.status}`
+    try {
+      const body = (await response.json()) as { error?: { code?: string; message?: string } }
+      throw new ApiError(body.error?.message ?? fallbackMessage, response.status, body.error?.code)
+    } catch (parseError) {
+      if (parseError instanceof ApiError) throw parseError
+      throw new ApiError(fallbackMessage, response.status)
+    }
   }
   return response
 }
@@ -113,6 +137,18 @@ export async function searchDocuments(request: SearchRequest): Promise<SearchRes
     body: JSON.stringify(request),
   })
   return (await response.json()) as SearchResponse
+}
+
+/** Docs/API.md §20. Uses RetrieveAndGenerate. `sessionId`, when present, must be a value this
+ * API previously returned — never invent one client-side. A 409 ASK_SESSION_EXPIRED means the
+ * conversation is gone; callers should drop it and start a new one, not retry with the same ID. */
+export async function askQuestion(request: AskRequest): Promise<AskResponse> {
+  const response = await authorizedFetch('/api/v1/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  return (await response.json()) as AskResponse
 }
 
 /**

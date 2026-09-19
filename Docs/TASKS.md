@@ -566,48 +566,122 @@ returns the correct uploaded memory.
 
 # Phase 6 — Ask your memory
 
+Implemented, deployed, and verified end-to-end against the real Knowledge Base and the real
+`RetrieveAndGenerate` model (2026-09-19). `mvn test` (Backend + Infra), `npm test`/`npm run
+build`/`npm run lint` (Frontend), and `cdk synth` all pass.
+
+**Post-approval correction:** `AskService` now only treats a Bedrock `ValidationException` as
+an expired session when its message matches the exact invalid/expired-session wording verified
+during the spike (`"Session with Id ... is not valid"`, matched via a compiled regex). Any
+other `ValidationException` on an existing session (e.g. malformed input) surfaces as a normal
+`400` and leaves the session mapping untouched. Two regression tests added
+(`bedrockRejectingAnExistingSessionAsInvalidExpiresTheMappingRatherThanRetryingTransparently`,
+`anUnrelatedValidationExceptionOnAnExistingSessionDoesNotExpireOrDeleteTheSession`).
+
+**Real bug found and fixed via live deployment (not caught by unit tests, IAM-permission
+category exactly like Phase 5's `bedrock:Retrieve` namespace fix):** the first live `/ask` call
+failed with `AccessDeniedException: Not authorized to call GetInferenceProfile for
+arn:aws:bedrock:ap-south-1:<account>:inference-profile/apac.amazon.nova-lite-v1:0`.
+`bedrock:RetrieveAndGenerate` alone does not cover resolving/invoking a cross-region inference
+profile — `bedrock:GetInferenceProfile`, `bedrock:InvokeModel`, and
+`bedrock:InvokeModelWithResponseStream` were added to the same `Resource: "*"` statement (kept
+separate from the KB-ARN-scoped `bedrock:Retrieve` statement, per the mandatory amendment).
+Fixed, redeployed, re-verified — see live verification results below.
+
+Before implementation, planning-time empirical checks against the already-deployed Knowledge
+Base (`MESMX1P9DN`) confirmed: `RetrieveAndGenerateConfiguration`'s retrieval filter is the
+identical shape `Retrieve` uses; Anthropic models on this account require a separate, manual
+"model use case details" form (observed to fail intermittently even after being filled out),
+while Amazon Nova Lite via the APAC cross-region inference profile has no such gate and produced
+accurate grounded answers; citation structure (`citations[].generatedResponsePart` +
+`retrievedReferences[]`) shares the same `content()`/`location()`/`metadata()` shape as
+`Retrieve`'s chunks; default graceful non-hallucination and tenant isolation both hold without
+any custom prompt template; an invalid/unknown `sessionId` throws `ValidationException` with a
+distinguishable message.
+
 ## Backend
 
-- [ ] Implement `POST /api/v1/ask`
-- [ ] Call `RetrieveAndGenerate`
-- [ ] Inject authenticated user metadata filter
-- [ ] Return generated answer
-- [ ] Return Bedrock `sessionId`
-- [ ] Accept sessionId for follow-up turns
-- [ ] Parse citations
-- [ ] Map citations to application documents
-- [ ] Verify document ownership
-- [ ] Generate short-lived citation access URLs
+- [x] Implement `POST /api/v1/ask` — `AskController`/`AskService`
+- [x] Call `RetrieveAndGenerate` — `KnowledgeBaseRetrieveAndGenerateConfiguration`, fixed 8 grounding chunks (not client-configurable, matching the documented request shape)
+- [x] Inject authenticated user metadata filter — `RetrievalFilters.forUser`, extracted as the single shared source of truth for the tenant filter used by both `/search` and `/ask` (Phase 6 amendment: do not duplicate this security-critical logic)
+- [x] Return generated answer — `response.output().text()`
+- [x] Return an application-issued session identifier, never Bedrock's raw one — Phase 6 mandatory amendment. See "Session handling" below
+- [x] Accept sessionId for follow-up turns — resolved to the real Bedrock session under the authenticated user's own DynamoDB partition before ever calling Bedrock
+- [x] Parse citations — flattens `citations[].retrievedReferences[]`
+- [x] Deduplicate citations by `(documentId, startMs, endMs)`, not `documentId` alone — `AskCitationMapper`, preserves separate cited moments of the same audio/video file (Phase 6 amendment)
+- [x] Map citations to application documents — reuses `RetrievalContentMapper` (extracted from `SearchResultMapper` during this phase; both `/search` and `/ask` chunk-mapping logic now share one implementation)
+- [x] Verify document ownership — `DocumentRepository.findByUserAndDocumentId`, same as `/search`; unresolvable citations are silently skipped, never surfaced as a raw staging reference
+- [x] Resolve citation sources through the existing `/documents/{id}/access-url` on click — no presigned URL embedded in the `/ask` response itself (one of the three pre-approved open decisions)
+
+### Session handling (Phase 6 mandatory amendment)
+
+- [x] New ephemeral `AskSession` DynamoDB entity — `PK=USER#<sub>, SK=ASK_SESSION#<applicationSessionId>`, storing only `bedrockSessionId` + TTL, never conversation text (`Docs/DATA_MODEL.md` §15)
+- [x] Raw Bedrock session IDs are never exposed to or accepted from the frontend
+- [x] A `sessionId` that doesn't resolve under the authenticated user's own partition (foreign, forged, expired, or never existed) throws `AskSessionExpiredException` **before any Bedrock call is made**
+- [x] Bedrock rejecting an existing session (`ValidationException`) deletes the mapping and throws the same exception — no transparent contextual retry without history
+- [x] `AskSessionExpiredException` → `409 ASK_SESSION_EXPIRED` (`ApiExceptionHandler`)
+- [x] Renamed `SearchUnavailableException` → `RetrievalUnavailableException`, shared by `/search` and `/ask` (third pre-approved open decision)
+
+## IAM / Infra
+
+- [x] `bedrock:RetrieveAndGenerate` granted as its **own** statement with `Resource: "*"` — kept separate from the KB-ARN-scoped `bedrock:Retrieve` statement, per current AWS Knowledge Bases IAM documentation (Phase 6 mandatory amendment; the call also invokes the configured model/inference profile, a separate resource from the Knowledge Base itself). Same statement also grants `bedrock:GetInferenceProfile`/`bedrock:InvokeModel`/`bedrock:InvokeModelWithResponseStream` — added after a live `AccessDeniedException` on the first real `/ask` call showed `RetrieveAndGenerate` alone doesn't cover resolving/invoking the cross-region inference profile
+- [x] `ASK_MODEL_ARN` env var — Amazon Nova Lite via the APAC cross-region inference profile (`apac.amazon.nova-lite-v1:0`), built from `this.getRegion()`/`this.getAccount()` rather than hardcoded
+- [x] New route `POST /api/v1/ask`, same JWT authorizer + `memory-api/access` scope as every other protected route
+- [x] No `DataStack` changes — `AskSession` reuses the existing table and its already-configured `expiresAt` TTL attribute
 
 ## Frontend
 
-- [ ] Ask UI
-- [ ] Multi-turn session handling
-- [ ] Answer rendering
-- [ ] Citation chips/cards
-- [ ] Click citation -> original source
-- [ ] Show source snippet
-- [ ] Show media timestamp when available
+- [x] Ask UI — real `AskPage` inside the existing `AppShell` (nav entry already existed from Phase 5)
+- [x] Multi-turn session handling — holds the opaque `sessionId` in component state only; a page refresh starts a new conversation (no persistence), matching `Docs/ARCHITECTURE.md` §8.2
+- [x] Answer rendering — Question → Answer → Sources thread (`Docs/FRONTEND.md` §16)
+- [x] Citation cards — new `CitationCard` (kept separate from `SearchResultCard` — Search and Ask stay UI-decoupled)
+- [x] Click citation -> original source — fetches `/access-url` fresh on click, same pattern as `SearchResultCard`
+- [x] Show source snippet
+- [x] Show media timestamp when available
+- [x] Graceful `ASK_SESSION_EXPIRED` handling — new `ApiError` class (carries HTTP status + `Docs/API.md` §6 error code) lets the frontend distinguish this from other failures; on it, the conversation thread is cleared and a "starting a new one" notice is shown, the typed question is preserved, and the app does **not** silently resend it as if history still existed
 
-## Verification
+## Tests
 
-Example:
+- [x] `AskCitationMapperTest` (6 tests) — dedup by `(documentId, startMs, endMs)`, preserving separate audio/video moments; flattening multiple references per citation; skipping unresolvable references
+- [x] `AskServiceTest` (10 tests, plain Mockito) — first-turn vs. follow-up session flow, foreign/unresolvable `sessionId` never calls Bedrock, the verified invalid/expired-session `ValidationException` message expires the session without retrying, an *unrelated* `ValidationException` on a healthy session does **not** expire or delete it (post-approval regression test), throttling vs. other upstream failures, tenant-filter injection, unresolvable-citation skipping
+- [x] `AskControllerTest` (5 tests, MockMvc) — end-to-end happy path incl. asserting no `accessUrl` field is present, validation error, client-supplied `userId`/`tenantId` ignored, `409 ASK_SESSION_EXPIRED`, follow-up session resolution
+- [x] `ApiStackTest` — new `POST /api/v1/ask` route and the separate `bedrock:RetrieveAndGenerate`/`Resource: "*"` IAM statement
+- [x] `AskPage.test.tsx` (5 tests) — empty state, first-turn call shape, follow-up reuses the returned `sessionId`, session-expiry clears the thread without a transparent retry, generic-error inline message
+- [x] `CitationCard.test.tsx` (3 tests) — open-file action, timestamp formatting, no timestamp text when absent
+- [x] All existing Phase 5 `SearchResultMapperTest`/`SearchControllerTest` tests still pass unchanged against the refactored shared mapper (signature-preserving delegation, not a behavior change)
 
-```text
-"What did my internship document say about relocation?"
-```
+## Documentation
 
-returns:
+- [x] `Docs/DATA_MODEL.md` §15 rewritten for the `AskSession` entity, its access pattern, and the session lifecycle (replacing the superseded raw-Bedrock-passthrough description)
+- [x] `Docs/API.md` §20 rewritten: opaque application `sessionId` semantics, citation shape without `accessUrl`, `mediaCategory`/`mimeType` fields added to match the shipped DTO, `409 ASK_SESSION_EXPIRED` documented, fixed 8-chunk retrieval noted as not client-configurable
 
-```text
-grounded answer + clickable citation
-```
+## Live verification (2026-09-19, against the real deployed API + Knowledge Base)
+
+All calls made directly against the deployed `memory-layer-api:live` Lambda alias with a
+synthetic-but-faithful API Gateway v2.0 JWT-authorizer event (same technique Phase 5 used — no
+browser-automation tool is available in this environment).
+
+- [x] A real answerable question ("What does the note say Tata Motors can do to renew innovation?") against the JPEG's owning user → grounded answer, single citation, correct `documentId` (`de56b210-...`), matching the exact BDA-derived text
+- [x] The same question as a different real user → correctly declined ("the search results do not contain any information related to Tata Motors or innovation"), citations only from that user's own 8 unrelated documents — no leak
+- [x] An off-topic question ("boiling point of mercury on Jupiter") against a user with real content → graceful non-hallucinating decline, still cites the (irrelevant) retrieved chunks rather than fabricating an answer
+- [x] A follow-up using the returned application `sessionId` ("Who resists these entrepreneurial teams?", no antecedent without context) → correctly resolved from the prior turn, same `sessionId` returned
+- [x] A follow-up with a forged/nonexistent `sessionId` → `409 ASK_SESSION_EXPIRED`
+- [x] **Cross-user session theft attempt** — a second real user supplied the first user's genuine, currently-valid `sessionId` → `409 ASK_SESSION_EXPIRED`, identical response to the forged case (does not leak whether the session exists for someone else)
+- [x] Attempted `userId`/`tenantId`/raw-`bedrockSessionId` injection in the request body → all silently ignored (not fields on `AskRequest`), results stayed correctly scoped to the authenticated user
+- [x] No staging S3 URI, bucket name, or `accessUrl` field in any captured response body
+- [x] Click a citation → fresh `/access-url` for the JPEG → 200, `image/jpeg`, 235574 bytes (matches DynamoDB) — real file confirmed
+- [x] Citation dedup verified live: a query returning 8 grounding chunks across 3 duplicate `test-video.mp4`/`test-speech.wav` uploads produced 8 distinct, correctly-deduped citations, none incorrectly merged (the specific same-document-different-moment case is proven directly by `AskCitationMapperTest`, since the live test corpus has no natural example of one document cited at two different timestamps in one answer)
+- [x] `AskSession` DynamoDB items inspected directly: 7 rows created during this verification pass, each scoped to the correct `PK=USER#<sub>`, each with a distinct opaque `applicationSessionId`, its own `bedrockSessionId` (never returned to any client), and a valid ~24h `expiresAt` TTL; the continued session's `updatedAt` correctly refreshed on reuse; no conversation text stored anywhere
+- [x] CloudWatch checked for errors: exactly one `ERROR`-level line in the entire verification window, the `GetInferenceProfile` `AccessDeniedException` from the first call before the IAM fix — zero errors after; zero errors in either Phase 4 Lambda (`memory-layer-ingestion-coordinator`, `memory-layer-status-reconciler`) throughout
+- [x] No Phase 4/5 regression — the JPEG's DynamoDB `status`/`updatedAt` unchanged since Phase 4/5; `GET /api/v1/health` returns 200; `MemoryLayerAuthStack`'s Google client ID confirmed unchanged post-deploy
 
 ### Phase 6 exit condition
 
 ```text
 ask -> grounded answer -> citation -> source file
 ```
+
+**Met and live-verified.**
 
 ---
 

@@ -9,7 +9,7 @@ import com.memorylayer.api.dto.SearchResult;
 import com.memorylayer.api.dto.SearchResultDocument;
 import com.memorylayer.api.dto.SearchResultMatch;
 import com.memorylayer.api.error.InvalidRequestException;
-import com.memorylayer.api.error.SearchUnavailableException;
+import com.memorylayer.api.error.RetrievalUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -80,10 +80,10 @@ public class SearchService {
             response = bedrockAgentRuntimeClient.retrieve(retrieveRequest);
         } catch (ThrottlingException e) {
             log.warn("Bedrock Retrieve throttled", e);
-            throw new SearchUnavailableException("The service is temporarily busy. Please retry shortly.", true);
+            throw new RetrievalUnavailableException("The service is temporarily busy. Please retry shortly.", true);
         } catch (SdkException e) {
             log.error("Bedrock Retrieve failed", e);
-            throw new SearchUnavailableException("Search is temporarily unavailable. Please try again.", false);
+            throw new RetrievalUnavailableException("Search is temporarily unavailable. Please try again.", false);
         }
 
         List<SearchResultMapper.DedupedMatch> matches =
@@ -131,12 +131,7 @@ public class SearchService {
      * client-influenceable addition is an optional {@code mediaCategory} "in" clause, which is
      * additive (AND), never a replacement. */
     private static RetrievalFilter buildFilter(String userId, List<MediaCategory> mediaCategories) {
-        RetrievalFilter userFilter = RetrievalFilter.builder()
-                .equalsValue(FilterAttribute.builder()
-                        .key("userId")
-                        .value(software.amazon.awssdk.core.document.Document.fromString(userId))
-                        .build())
-                .build();
+        RetrievalFilter userFilter = RetrievalFilters.forUser(userId);
 
         if (mediaCategories.isEmpty()) {
             return userFilter;

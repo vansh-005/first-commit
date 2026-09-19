@@ -577,27 +577,86 @@ Prefer the smallest model that supports reliable status updates.
 
 ---
 
-# 15. Conversation / Bedrock session model
+# 15. Conversation / Ask session model
 
-`RetrieveAndGenerate` may return a Bedrock `sessionId` for follow-up conversational context.
+`RetrieveAndGenerate` returns a Bedrock `sessionId` for follow-up conversational context.
 
-Do not make this a core persistent entity initially.
+**The raw Bedrock session ID is never exposed to, or accepted from, the frontend (Phase 6
+amendment).** A raw Bedrock session ID carries no tenant binding of its own — nothing stops a
+client from replaying someone else's session ID if it were ever handed back to the browser.
+Instead, the backend issues its own opaque `sessionId` and maps it to the real Bedrock session
+through a short-lived DynamoDB entity, scoped to the authenticated user's own partition.
 
-For MVP:
+## 15.1 AskSession entity
 
 ```text
-frontend keeps sessionId
-      |
-      v
-frontend sends sessionId on next /ask
-      |
-      v
-backend forwards it to Bedrock
+PK = USER#<userId>
+SK = ASK_SESSION#<applicationSessionId>
 ```
 
-If the session is unavailable/invalid, create a new conversation.
+```json
+{
+  "PK": "USER#abc123",
+  "SK": "ASK_SESSION#7c9e6679-7425-40de-944b-e07fc1f90ae7",
 
-We can persist conversations later if we add:
+  "applicationSessionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "userId": "abc123",
+  "bedrockSessionId": "<raw Bedrock RetrieveAndGenerate sessionId>",
+
+  "updatedAt": "2026-09-19T03:00:00Z",
+  "expiresAt": 1790003600
+}
+```
+
+- `applicationSessionId` is a backend-generated UUID — the only session identifier the
+  frontend ever sees or sends back.
+- `bedrockSessionId` never leaves the backend.
+- `expiresAt` is a DynamoDB TTL attribute (epoch seconds, same `expiresAt` attribute the table
+  already uses for `IngestionJob` records, §14) — a cleanup safety net for abandoned
+  conversations, independent of whatever TTL Bedrock applies to the underlying session itself
+  (undocumented; do not assume one, per `Docs/ARCHITECTURE.md` §8.2).
+- **Conversation text/history is never stored** — this item is only a pointer to Bedrock's own
+  session state, not a chat log.
+
+### Access pattern — resolve a follow-up's Bedrock session
+
+```text
+PK = USER#<authenticated JWT sub>
+SK = ASK_SESSION#<applicationSessionId from the request>
+```
+
+Direct lookup, no query. Because resolution is always scoped to `USER#<authenticated sub>`, an
+`applicationSessionId` that belongs to a different user — or that never existed, or that
+already expired/was deleted — simply doesn't resolve. These cases are indistinguishable by
+design, the same way an unowned `documentId` and a nonexistent one look identical under AP1
+(§16). This is what makes cross-user Bedrock-session reuse structurally impossible, not just
+policy.
+
+## 15.2 Session lifecycle
+
+```text
+first /ask (no sessionId)
+      |
+      v
+backend calls RetrieveAndGenerate with no session
+      |
+      v
+backend generates applicationSessionId, stores {bedrockSessionId}, returns applicationSessionId
+      |
+      v
+frontend sends that applicationSessionId on the next /ask
+      |
+      v
+backend resolves it under USER#<sub> -> bedrockSessionId -> forwards to Bedrock
+```
+
+If Bedrock rejects the resolved `bedrockSessionId` as invalid/expired, the backend does
+**not** transparently retry the same question without conversational history — silently
+answering as if the conversation continued when it didn't would be worse than telling the
+truth. Instead it deletes the `AskSession` mapping and returns a specific
+`ASK_SESSION_EXPIRED` response (`Docs/API.md` §20); the frontend starts a new conversation.
+
+We can persist actual conversation history later if we add:
 
 - chat history,
 - named conversations,
