@@ -406,6 +406,9 @@ landing header/footer ("Engineering"). Frontend-only — no backend/infra/API ch
   `server.fs.allow: ['..']` so dev can read `../Docs`. Change the diagrams by editing `generate.py`, not the SVGs.
 - Only the high-level diagram uses AWS icons: official AWS Architecture Icons (July 2026 pack), unmodified, stored in
   `Docs/diagrams/icons/` and inlined by `Diagram.icon()`. The Upload and Search/Ask diagrams stay logical (no icons).
+- Layout: hero (3 chips, 3 facts, no region/IDs) -> sticky contained `SectionNav` (scroll-spy, horizontal scroll on mobile)
+  directly below it. `ap-south-1 (Mumbai)` lives in the Architecture lead. Landing has an `EngineeringShowcase`
+  teaser (secondary to the main CTA) between the product visual and "How it works".
 - Must never show account IDs, bucket names, ARNs, Cognito IDs, emails, real user/document IDs — enforced by a scan in
   `EngineeringPage.test.tsx`. The 0.62 threshold is described as corpus-calibrated and tunable.
 - When Ask/Search/ingestion behavior changes, update `generate.py` + `content.ts` + `ARCHITECTURE.md` together.

@@ -15,7 +15,7 @@ export function EngineeringSection({
   children: ReactNode
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-20 border-t border-border">
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-32 border-t border-border">
       <div className="mx-auto max-w-6xl px-5 py-16 sm:py-20">
         <p className="text-sm font-medium text-accent-text">{eyebrow}</p>
         <h2 id={`${id}-title`} className="mt-2 max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">

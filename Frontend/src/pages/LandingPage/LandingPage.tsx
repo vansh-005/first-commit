@@ -1,4 +1,5 @@
 import { AppWindowPreview } from '@/components/brand/ProductPreview'
+import { EngineeringShowcase } from '@/components/marketing/EngineeringShowcase'
 import { PublicFooter } from '@/components/marketing/PublicFooter'
 import { PublicHeader } from '@/components/marketing/PublicHeader'
 import { ArrowRight, Lock, MessageSquare, Search, Upload } from 'lucide-react'
@@ -63,6 +64,8 @@ export function LandingPage() {
             </div>
           </div>
         </section>
+
+        <EngineeringShowcase />
 
         <section id="how-it-works" className="scroll-mt-16 border-t border-border">
           <div className="mx-auto max-w-6xl px-5 py-20">

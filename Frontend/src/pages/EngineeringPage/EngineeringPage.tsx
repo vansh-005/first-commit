@@ -7,6 +7,7 @@ import uploadUrl from '../../../../Docs/diagrams/upload-ingestion.svg?url'
 import { GithubIcon } from '@/components/brand/GithubIcon'
 import { DiagramFigure } from '@/components/engineering/DiagramFigure'
 import { EngineeringSection } from '@/components/engineering/EngineeringSection'
+import { SectionNav } from '@/components/engineering/SectionNav'
 import { ScoreRangeChart } from '@/components/engineering/ScoreRangeChart'
 import { PublicFooter } from '@/components/marketing/PublicFooter'
 import { PublicHeader } from '@/components/marketing/PublicHeader'
@@ -46,7 +47,7 @@ const TOC = [
   ['upload', 'Upload'],
   ['retrieval', 'Retrieval'],
   ['security', 'Security'],
-  ['data-model', 'Data model'],
+  ['data-model', 'Data Model'],
   ['reliability', 'Reliability'],
   ['decisions', 'Decisions & cost'],
   ['challenges', 'Challenges'],
@@ -97,7 +98,7 @@ export function EngineeringPage() {
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 h-[460px] bg-[radial-gradient(60%_60%_at_50%_0%,var(--accent-subtle),transparent)]"
           />
-          <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-16 sm:pt-24">
+          <div className="relative mx-auto max-w-6xl px-5 pb-8 pt-12 sm:pt-16">
             <p className="animate-fade-up text-sm font-medium text-accent-text">{HERO.eyebrow}</p>
             <h1 className="animate-fade-up mt-3 max-w-4xl text-balance text-4xl font-semibold tracking-tight [animation-delay:60ms] sm:text-6xl sm:leading-[1.05]">
               {HERO.title}
@@ -125,7 +126,7 @@ export function EngineeringPage() {
               </a>
             </div>
 
-            <dl className="mt-14 grid gap-px overflow-hidden rounded-[var(--radius-lg)] border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+            <dl className="mt-9 grid gap-px overflow-hidden rounded-[var(--radius-lg)] border border-border bg-border sm:grid-cols-3">
               {HERO.facts.map((fact) => (
                 <div key={fact.label} className="bg-surface p-5">
                   <dt className="text-xs font-medium uppercase tracking-wider text-text-muted">{fact.label}</dt>
@@ -133,27 +134,17 @@ export function EngineeringPage() {
                 </div>
               ))}
             </dl>
-
-            <nav aria-label="On this page" className="mt-8 flex gap-2 overflow-x-auto pb-1">
-              {TOC.map(([id, label]) => (
-                <a
-                  key={id}
-                  href={`#${id}`}
-                  className="shrink-0 rounded-full px-3 py-1.5 text-sm text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary"
-                >
-                  {label}
-                </a>
-              ))}
-            </nav>
           </div>
         </section>
+
+        <SectionNav items={TOC.map(([id, label]) => ({ id, label }))} />
 
         {/* ---------------------------------------------------------------- Architecture */}
         <EngineeringSection
           id="architecture"
           eyebrow="High-Level Architecture"
           title="Serverless from the browser to the vector index"
-          lead="The browser gets the app from Amplify, identity from Cognito and everything else from one API. Upload and download file bytes bypass the API Lambda."
+          lead="The browser gets the app from Amplify, identity from Cognito and everything else from one API. Upload and download file bytes bypass the API Lambda. Everything runs in one region, ap-south-1 (Mumbai)."
         >
           <DiagramFigure
             svg={highLevelSvg}

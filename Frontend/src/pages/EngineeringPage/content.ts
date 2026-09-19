@@ -38,9 +38,8 @@ export const HERO = {
   title: 'Engineering Recollect',
   lead:
     'A serverless personal memory layer on AWS. Upload anything, find it by describing it, and ask questions answered only from your own files — with tenant isolation designed into every layer.',
-  chips: ['Serverless compute', 'No always-on servers', 'Tenant-isolated by design', 'Async ingestion', 'Grounded answers'],
+  chips: ['Serverless compute', 'Tenant-isolated by design', 'Grounded multimodal retrieval'],
   facts: [
-    { label: 'Region', value: 'ap-south-1 (Mumbai)' },
     { label: 'Compute', value: 'Java 21 Lambda + SnapStart' },
     { label: 'Retrieval', value: 'Bedrock Knowledge Base + S3 Vectors' },
     { label: 'Infrastructure', value: 'AWS CDK, end to end' },
