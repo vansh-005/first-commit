@@ -111,7 +111,7 @@ export const ASK_OUTCOMES: Card[] = [
   {
     icon: Fingerprint,
     title: 'File lookup from metadata',
-    body: '“Do I have …?” is answered from real filenames — the model never sees them. The resolved files become the conversation’s server-owned context.',
+    body: '“Find / show / do I have …” (or a bare topic that strongly matches a filename) is answered from real filenames plus semantic candidates — the model never sees filenames. The resolved files become the conversation’s server-owned context.',
   },
   {
     icon: MessagesSquare,

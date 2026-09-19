@@ -67,7 +67,7 @@
 <text x="616" y="316" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">DECISION</text>
 <text x="616" y="331" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Context-only conversation?</text>
 <text x="616" y="346" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">contextDocumentIds ≠ ∅ · no Bedrock session yet</text>
-<text x="616" y="361" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">· not a file-lookup question</text>
+<text x="616" y="361" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">· not an explicit discovery request</text>
 <path d="M764.0,366 L764.0,412" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-primary)"/>
 <rect x="771.4" y="382" width="21.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
 <text x="782.0" y="393.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">no</text>
@@ -75,37 +75,39 @@
 <text x="616" y="432" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Preflight Retrieve</text>
 <text x="616" y="447" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">same tenant filter · same 0.62 relevance gate</text>
 <path d="M764.0,474 L764.0,512" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-primary)"/>
-<rect x="604" y="512" width="320" height="56" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<rect x="604" y="512" width="320" height="68" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
 <text x="616" y="532" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">DECISION</text>
-<text x="616" y="547" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Anything relevant?</text>
-<text x="616" y="562" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">(context sessions stay on their file)</text>
-<path d="M924,540 L956,540" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-secondary)"/>
-<rect x="929.4" y="529" width="21.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
-<text x="940.0" y="540.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">no</text>
-<rect x="956" y="504" width="460" height="74" rx="10" style="fill:var(--surface,#1c1d21);stroke:var(--border,#2c2d33);stroke-width:1.25"/>
-<text x="968" y="524" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">OUTCOME</text>
-<text x="968" y="539" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-secondary,#a3a3a8)">Deterministic no-answer</text>
-<text x="968" y="554" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-muted,#8e8f96)">“I couldn&#x27;t find anything in your memories…”</text>
-<text x="968" y="569" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-muted,#8e8f96)">no model call · zero citations · sessionId null</text>
-<path d="M764.0,568 L764.0,608" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-primary)"/>
-<rect x="768.6" y="579" width="26.8" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
-<text x="782.0" y="590.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">yes</text>
+<text x="616" y="547" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">File discovery?</text>
+<text x="616" y="562" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">explicit “find / show / do I have …”, or a bare</text>
+<text x="616" y="577" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">topic with a strong filename match</text>
+<path d="M924,546 L956,546" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-secondary)"/>
+<rect x="926.6" y="535" width="26.8" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="940.0" y="546.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">yes</text>
+<rect x="956" y="490" width="460" height="110" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="968" y="510" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">OUTCOME</text>
+<text x="968" y="525" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Answer from file metadata</text>
+<text x="968" y="540" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">filename matches first, then semantic candidates · max 3</text>
+<text x="968" y="555" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">no model call · snippets only from real retrieval hits</text>
+<text x="968" y="570" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">writes AskSession.contextDocumentIds · bedrockSessionId = null</text>
+<text x="968" y="585" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">returns the opaque sessionId (creates the session if needed)</text>
+<path d="M764.0,580 L764.0,608" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-primary)"/>
+<rect x="771.4" y="587" width="21.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="782.0" y="598.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">no</text>
 <rect x="604" y="608" width="320" height="62" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
 <text x="616" y="628" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">DECISION</text>
-<text x="616" y="643" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">File-lookup question?</text>
-<text x="616" y="658" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">“do I have …?” · “find my …”</text>
+<text x="616" y="643" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Anything relevant?</text>
+<text x="616" y="658" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">(context sessions stay on their file)</text>
 <path d="M924,639 L956,639" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-secondary)"/>
-<rect x="926.6" y="628" width="26.8" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
-<text x="940.0" y="639.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">yes</text>
-<rect x="956" y="604" width="460" height="92" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
-<text x="968" y="624" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">OUTCOME</text>
-<text x="968" y="639" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Answer from file metadata</text>
-<text x="968" y="654" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">the model never sees filenames, so this is deterministic</text>
-<text x="968" y="669" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">writes AskSession.contextDocumentIds · bedrockSessionId = null</text>
-<text x="968" y="684" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">returns the opaque sessionId (creates the session if needed)</text>
+<rect x="929.4" y="628" width="21.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="940.0" y="639.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">no</text>
+<rect x="956" y="610" width="460" height="78" rx="10" style="fill:var(--surface,#1c1d21);stroke:var(--border,#2c2d33);stroke-width:1.25"/>
+<text x="968" y="630" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">OUTCOME</text>
+<text x="968" y="645" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-secondary,#a3a3a8)">Deterministic no-answer</text>
+<text x="968" y="660" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-muted,#8e8f96)">“I couldn&#x27;t find anything in your memories…”</text>
+<text x="968" y="675" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-muted,#8e8f96)">no model call · zero citations · sessionId null</text>
 <path d="M764.0,670 L764.0,726" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#sra-arrow-primary)"/>
-<rect x="771.4" y="687" width="21.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
-<text x="782.0" y="698.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">no</text>
+<rect x="768.6" y="687" width="26.8" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="782.0" y="698.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">yes</text>
 <rect x="604" y="726" width="320" height="98" rx="10" style="fill:var(--accent-subtle,rgba(91,108,255,.16));stroke:var(--accent,#4f5fff);stroke-width:1.25"/>
 <text x="616" y="746" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--accent-text,#93a0ff)">GENERATION</text>
 <text x="616" y="761" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">RetrieveAndGenerate</text>

@@ -68,6 +68,29 @@ public class DocumentRepository {
         return new DocumentPage(page.items(), DocumentCursor.encode(page.lastEvaluatedKey()));
     }
 
+    /** The user's READY documents (newest first, at most {@code max}), read from their own GSI1 partition only.
+     * Used by Ask's file discovery to match filenames; a document of another user is never in this partition. */
+    public List<Document> listReadyByUser(String userId, int max) {
+        QueryConditional condition = QueryConditional.keyEqualTo(Key.builder()
+                .partitionValue(DocumentKeys.userPartitionKey(userId))
+                .build());
+        List<Document> ready = new ArrayList<>();
+        for (Page<Document> page : gsi1.query(QueryEnhancedRequest.builder()
+                .queryConditional(condition)
+                .scanIndexForward(false)
+                .build())) {
+            for (Document document : page.items()) {
+                if (document.getStatus() == DocumentStatus.READY) {
+                    ready.add(document);
+                    if (ready.size() >= max) {
+                        return ready;
+                    }
+                }
+            }
+        }
+        return ready;
+    }
+
     /** Phase 7 stale-document cleanup. A full table scan filtered post-hoc by status — there is
      * no GSI for status/time, and per the approved Phase 7 plan, adding one solely for this
      * low-frequency (every 15 minutes), MVP-scale cleanup job is not justified. Production

@@ -375,6 +375,13 @@ Things to know when touching the frontend:
   Ask can do a preflight `Retrieve` + one or two generations; latency is ~2-5s normally, up to ~12s for a retrying
   turn. Don't lower it below ~20s without re-measuring. The first context-only turn asks the anchored wording once
   (no failed attempt first).
+- **File discovery (Ask)** (live since Lambda `live` alias v18): `FindIntent` (explicit find/show/locate/do-I-have, determiner optional) +
+  `DocumentNameMatcher` (filename tokens: camelCase/`_-.`/digits, plural stemming, one-edit typo on 6+ char tokens,
+  all query tokens must match; bare topics exact-only and not questions). Candidates = filename matches, then
+  gate-passing semantic docs (max 3), resolved *before* the relevance check; nothing → deterministic no-answer.
+  Reads the caller's own READY docs via `DocumentRepository.listReadyByUser` (GSI1, own partition). Root cause it
+  fixed: "find numerical method assignment" (no determiner) skipped the find path and got a model refusal even
+  though the file scored 0.75 on Retrieve. 0.62 is unchanged.
 - **Ask conversational context:** `AskSession.contextDocumentIds` (server-owned; set by the find path; bedrockSessionId
   nullable) scopes deictic follow-ups to the found file. Details: `Docs/DATA_MODEL.md` §15.1, `Docs/API.md` §20.
 - **`RetrieveAndGenerate` gotchas (verified live):** its own retrieval can return **zero references** for short

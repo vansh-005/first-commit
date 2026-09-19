@@ -959,6 +959,15 @@ awaiting a real-Cognito-login review of Home/Library/Search/Ask with actual data
 - [x] `ARCHITECTURE.md` §2/§3/§4/§8 refreshed to deployed behavior; `DOC#` sort-key prefix corrected in KT
 - [ ] Commit/push + Amplify verification of `/engineering` (awaiting user request)
 
+### Ask file discovery by filename metadata — **deployed (Lambda `live` alias = version 18)**
+
+- [x] Diagnosed live: "find numerical method assignment" skipped the find path (no determiner), passed the 0.62 gate (top chunk 0.75) and got a model refusal
+- [x] `FindIntent` determiner optional for find/locate/show/search for/look for; `DocumentNameMatcher` (filename tokens, plural stemming, 6+ char one-edit typo, all tokens required, bare topics exact-only); `DocumentRepository.listReadyByUser`
+- [x] Discovery resolved before the relevance check; candidates = filename matches then gate-passing semantic docs (max 3); contextDocumentIds persisted
+- [x] Tests: explicit find/show/locate, plural, typo, bare strong match, bare no-match stays grounded, unrelated no-answer, foreign-user isolation, find -> explain this assignment (177 backend tests pass)
+- [x] `cdk diff` reviewed, MemoryLayerApiStack deployed, live verification 23/23 (six queries + variants, no-match, foreign user, find -> explain/Q2/summarize, Search unchanged)
+- [ ] Commit/push (awaiting user request)
+
 ## Phase 8 notes
 
 - UI primitives are hand-written Tailwind (Skeleton/Badge/EmptyState/ErrorState/dialog/menu) —

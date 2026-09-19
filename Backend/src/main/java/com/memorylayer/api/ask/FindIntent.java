@@ -24,7 +24,11 @@ final class FindIntent {
     private static final List<Pattern> FIND_PATTERNS = List.of(
             Pattern.compile("^(do|did|have) (i|we) (still )?(have|got|save|saved|upload|uploaded|store|stored|keep|kept)\\b.*"),
             Pattern.compile("^(is|are) there (a|an|any|my|the)\\b.*"),
-            Pattern.compile("^(find|locate|show|open|get|fetch|pull up|bring up)( me)?( up)? (my|the|a|an|all|any)\\b.*"),
+            // A determiner is optional for the unambiguous discovery verbs ("find numerical method assignment"), but
+            // "show me how ...", "find out ..." and "find a summary of ..." are content requests, not file lookups.
+            Pattern.compile("^(find|locate|show|search for|look for|pull up|bring up)( me)?+( up)?+ "
+                    + "(?!(out|how|what|why|when|who|if|whether|a summary|the summary|summary)\\b).+"),
+            Pattern.compile("^(open|get|fetch)( me)?( up)? (my|the|a|an|all|any)\\b.*"),
             Pattern.compile("^where('s| is| are| did i (put|save|store))\\b.*"),
             Pattern.compile("^(which|what) (files?|documents?|pdfs?|images?|photos?|pictures?|recordings?|notes?|videos?|screenshots?)"
                     + " (do i have|did i (upload|save|store))\\b.*"));

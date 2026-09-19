@@ -249,24 +249,26 @@ def search_ask():
     d.edge([(MID, 270), (MID, 296)], "primary")
 
     d.node(L, 296, LW, 70, "Context-only conversation?", ["contextDocumentIds ≠ ∅ · no Bedrock session yet",
-                                                            "· not a file-lookup question"], "node", "Decision")
+                                                            "· not an explicit discovery request"], "node", "Decision")
     d.edge([(MID, 366), (MID, 412)], "primary", "no", MID + 18, 393)
 
     d.node(L, 412, LW, 62, "Preflight Retrieve", ["same tenant filter · same 0.62 relevance gate"], "primary")
     d.edge([(MID, 474), (MID, 512)], "primary")
 
-    d.node(L, 512, LW, 56, "Anything relevant?", ["(context sessions stay on their file)"], "node", "Decision")
-    d.edge([(L + LW, 540), (R, 540)], "secondary", "no", 940, 540)
-    d.node(R, 504, RW, 74, "Deterministic no-answer", ["“I couldn't find anything in your memories…”",
-                                                         "no model call · zero citations · sessionId null"], "muted", "Outcome")
-    d.edge([(MID, 568), (MID, 608)], "primary", "yes", MID + 18, 590)
-
-    d.node(L, 608, LW, 62, "File-lookup question?", ["“do I have …?” · “find my …”"], "node", "Decision")
-    d.edge([(L + LW, 639), (R, 639)], "secondary", "yes", 940, 639)
-    d.node(R, 604, RW, 92, "Answer from file metadata", ["the model never sees filenames, so this is deterministic",
+    d.node(L, 512, LW, 68, "File discovery?", ["explicit “find / show / do I have …”, or a bare",
+                                                "topic with a strong filename match"], "node", "Decision")
+    d.edge([(L + LW, 546), (R, 546)], "secondary", "yes", 940, 546)
+    d.node(R, 490, RW, 110, "Answer from file metadata", ["filename matches first, then semantic candidates · max 3",
+                                                         "no model call · snippets only from real retrieval hits",
                                                          "writes AskSession.contextDocumentIds · bedrockSessionId = null",
                                                          "returns the opaque sessionId (creates the session if needed)"], "node", "Outcome")
-    d.edge([(MID, 670), (MID, 726)], "primary", "no", MID + 18, 698)
+    d.edge([(MID, 580), (MID, 608)], "primary", "no", MID + 18, 598)
+
+    d.node(L, 608, LW, 62, "Anything relevant?", ["(context sessions stay on their file)"], "node", "Decision")
+    d.edge([(L + LW, 639), (R, 639)], "secondary", "no", 940, 639)
+    d.node(R, 610, RW, 78, "Deterministic no-answer", ["“I couldn't find anything in your memories…”",
+                                                        "no model call · zero citations · sessionId null"], "muted", "Outcome")
+    d.edge([(MID, 670), (MID, 726)], "primary", "yes", MID + 18, 698)
 
     d.node(L, 726, LW, 98, "RetrieveAndGenerate", ["Amazon Nova Lite (APAC inference profile)",
                                                      "scoped: userId ∧ documentId ∈ (relevant | context)",

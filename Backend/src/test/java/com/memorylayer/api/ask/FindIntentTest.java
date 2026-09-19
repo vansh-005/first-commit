@@ -17,7 +17,12 @@ class FindIntentTest {
                 "Show me my offer letter",
                 "where is my internship offer?",
                 "which documents do I have about AWS",
-                "what files did I upload about fading"}) {
+                "what files did I upload about fading",
+                "find numerical method assignment",
+                "locate numerical methods assignment",
+                "show me my numerical methods assignment",
+                "search for lease agreement",
+                "look for my passport"}) {
             assertThat(FindIntent.isFindRequest(question)).as(question).isTrue();
         }
     }
@@ -31,6 +36,12 @@ class FindIntentTest {
                 "Did I save how much rent I pay?",
                 "Who is my landlord?",
                 "Summarize my most recent recording",
+                "show me how to reset my password",
+                "find out why the build failed",
+                "find a summary of chapter 2",
+                "what does my numerical methods assignment say?",
+                "numerical methods assignment",
+                "explain this assignment",
                 "  ",
                 ""}) {
             assertThat(FindIntent.isFindRequest(question)).as(question).isFalse();

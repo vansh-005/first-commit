@@ -123,6 +123,7 @@ public class AskService {
     private final String askModelArn;
 
     private static final int MAX_FOUND_FILES = 3;
+    private static final int MAX_DISCOVERY_DOCUMENTS = 500;
 
     public AskService(BedrockAgentRuntimeClient bedrockAgentRuntimeClient, KnowledgeBaseRetriever retriever,
                        DocumentRepository documentRepository, AskSessionRepository askSessionRepository) {
@@ -163,14 +164,28 @@ public class AskService {
                     new LinkedHashSet<>(contextDocumentIds), contextDocumentIds, true, true);
         }
 
+        // File discovery: filenames are evidence chunk similarity can't see. An explicit request ("find ...", "do I
+        // have ...") always matches the caller's own filenames; a bare topic becomes discovery only on a strong
+        // filename match, otherwise it stays an ordinary grounded question.
+        List<Document> nameMatches = findRequest
+                ? DocumentNameMatcher.match(documentRepository.listReadyByUser(userId, MAX_DISCOVERY_DOCUMENTS), question, true)
+                : bareTopicNameMatches(userId, question);
+        boolean discovery = findRequest || !nameMatches.isEmpty();
+
         // Preflight: same tenant filter, same relevance gate as /search.
         boolean followUp = bedrockSessionId != null;
         List<RelevantDocument> relevant = RelevantDocument.fromChunks(
                 retriever.retrieveRelevant(RetrievalFilters.forUser(userId), question, NUMBER_OF_RESULTS));
 
+        if (discovery) {
+            // Resolved before the relevance check, so a filename-only match can succeed and a lookup that finds nothing
+            // on either signal is the deterministic no-answer (never a model call).
+            return findResponse(userId, applicationSessionId, existing, nameMatches, relevant);
+        }
+
         if (relevant.isEmpty()) {
-            if (findRequest || (!followUp && contextDocumentIds.isEmpty())) {
-                // Nothing relevant to ground an answer in (or nothing matching a "do I have ...?"): don't call the model.
+            if (!followUp && contextDocumentIds.isEmpty()) {
+                // Nothing relevant to ground an answer in: don't call the model.
                 return new AskResponse(AskPrompt.NO_ANSWER, applicationSessionId, List.of());
             }
             if (!contextDocumentIds.isEmpty()) {
@@ -181,10 +196,15 @@ public class AskService {
             // A follow-up with only Bedrock history behind it: generation with the tenant filter alone.
             return generate(userId, question, applicationSessionId, bedrockSessionId, null, contextDocumentIds, false, false);
         }
-        if (findRequest) {
-            return findResponse(userId, applicationSessionId, existing, relevant);
-        }
         return generate(userId, question, applicationSessionId, bedrockSessionId, documentIds(relevant), contextDocumentIds, false, false);
+    }
+
+    /** Strong filename matches for a short topic phrase; empty (no listing at all) for anything that looks like a question. */
+    private List<Document> bareTopicNameMatches(String userId, String question) {
+        if (!DocumentNameMatcher.mightBeBareTopic(question)) {
+            return List.of();
+        }
+        return DocumentNameMatcher.match(documentRepository.listReadyByUser(userId, MAX_DISCOVERY_DOCUMENTS), question, false);
     }
 
     /**
@@ -318,16 +338,33 @@ public class AskService {
         }
     }
 
-    /** Answers "do I have ...?" from real metadata: the relevant documents' filenames. No model call, so
-     * no Bedrock session is created or touched - but the resolved files are stored as the conversation's
-     * context in the application session (created here if this is the first turn), so a follow-up like
-     * "explain this assignment" can retrieve from them. */
+    /** Answers a file-discovery question from real metadata: filename matches first, then the semantically relevant
+     * documents. No model call, so no Bedrock session is created or touched - but the resolved files are stored as the
+     * conversation's context in the application session (created here if this is the first turn), so a follow-up like
+     * "explain this assignment" can retrieve from them. Snippets come only from a semantic hit, never invented. */
     private AskResponse findResponse(String userId, String applicationSessionId, AskSession existing,
-                                     List<RelevantDocument> relevant) {
+                                     List<Document> nameMatches, List<RelevantDocument> relevant) {
+        Map<String, RelevantDocument> semanticHits = new LinkedHashMap<>();
+        relevant.forEach(hit -> semanticHits.put(hit.documentId(), hit));
+
         List<Citation> citations = new ArrayList<>();
+        Set<String> cited = new LinkedHashSet<>();
+        for (Document document : nameMatches) {
+            if (citations.size() >= MAX_FOUND_FILES) {
+                break;
+            }
+            RelevantDocument hit = semanticHits.get(document.getDocumentId());
+            cited.add(document.getDocumentId());
+            citations.add(new Citation("c" + (citations.size() + 1), document.getDocumentId(), document.getFileName(),
+                    document.getMediaCategory(), document.getMimeType(), hit == null ? "" : hit.snippet(),
+                    hit == null ? null : hit.mediaTimestamp()));
+        }
         for (RelevantDocument candidate : relevant) {
             if (citations.size() >= MAX_FOUND_FILES) {
                 break;
+            }
+            if (cited.contains(candidate.documentId())) {
+                continue;
             }
             documentRepository.findByUserAndDocumentId(userId, candidate.documentId()).ifPresent(document ->
                     citations.add(new Citation("c" + (citations.size() + 1), document.getDocumentId(), document.getFileName(),

@@ -464,12 +464,16 @@ class AskServiceTest {
 
     /** Turn 1 finds the file; turn 2 asks {@code followUp} in the same conversation. Returns turn 2's response. */
     private AskResponse findFileThenAsk(String followUp) {
-        // --- turn 1: "do I have a numerical methods assignment?"
         preflightFinds("doc-nm");
         when(documentRepository.findByUserAndDocumentId(USER_ID, "doc-nm"))
                 .thenReturn(Optional.of(sampleDocument("doc-nm", "NumericalMethods_Assignment1.pdf")));
+        return findFileThenAsk("do I have a numerical methods assignment?", followUp);
+    }
 
-        AskResponse found = askService.ask(USER_ID, new AskRequest("do I have a numerical methods assignment?", null));
+    /** Turn 1 is {@code firstQuestion} (the caller has already arranged what resolves it); turn 2 is {@code followUp}. */
+    private AskResponse findFileThenAsk(String firstQuestion, String followUp) {
+        // --- turn 1: the discovery question
+        AskResponse found = askService.ask(USER_ID, new AskRequest(firstQuestion, null));
 
         ArgumentCaptor<AskSession> saved = ArgumentCaptor.forClass(AskSession.class);
         verify(askSessionRepository).save(saved.capture());
@@ -937,5 +941,153 @@ class AskServiceTest {
 
     private static AskSession argThatSessionMapsBedrockId(String expectedBedrockSessionId) {
         return org.mockito.ArgumentMatchers.argThat(session -> expectedBedrockSessionId.equals(session.getBedrockSessionId()));
+    }
+
+    // ---------------------------------------------------------------- file discovery by filename metadata
+
+    private static final Document NUMERICAL = sampleDocument("doc-nm", "NumericalMethods_Assignment1.pdf");
+
+    private void userOwns(Document... documents) {
+        when(documentRepository.listReadyByUser(eq(USER_ID), anyInt())).thenReturn(List.of(documents));
+    }
+
+    @Test
+    void anExplicitFindWithoutADeterminerIsResolvedFromTheFilenameEvenWhenTheSemanticGateIsSilent() {
+        userOwns(sampleDocument("doc-x", "TataMotors_Invoice.jpeg"), NUMERICAL);
+        preflightFindsNothing();
+
+        AskResponse response = askService.ask(USER_ID, new AskRequest("find numerical method assignment", null));
+
+        assertThat(response.answer()).contains("NumericalMethods_Assignment1.pdf").contains("1 file");
+        assertThat(response.citations()).extracting(c -> c.fileName()).containsExactly("NumericalMethods_Assignment1.pdf");
+        assertThat(response.citations().get(0).snippet()).isEmpty(); // no semantic hit, so no invented snippet
+        assertThat(response.sessionId()).isNotBlank();
+        verifyNoBedrockCall();
+    }
+
+    @Test
+    void showLocateAndDoIHaveVariantsAllResolveTheSameFile() {
+        userOwns(sampleDocument("doc-x", "TataMotors_Invoice.jpeg"), NUMERICAL);
+        preflightFindsNothing();
+        for (String question : List.of("show me my numerical methods assignment", "locate numerical methods assignment",
+                "do I have a numerical methods assignment?", "Find NUMERICAL METHODS ASSIGNMENTS", "search for numerical method assignment")) {
+            AskResponse response = askService.ask(USER_ID, new AskRequest(question, null));
+            assertThat(response.citations()).as(question).extracting(c -> c.fileName())
+                    .containsExactly("NumericalMethods_Assignment1.pdf");
+        }
+    }
+
+    @Test
+    void aSmallTypoOnALongTokenStillFindsTheFileButShortTokensMustBeExact() {
+        userOwns(NUMERICAL);
+        preflightFindsNothing();
+
+        assertThat(askService.ask(USER_ID, new AskRequest("find numericl methods assigment", null)).citations())
+                .extracting(c -> c.fileName()).containsExactly("NumericalMethods_Assignment1.pdf");
+        // "metod" is short and wrong: no fuzzy match, so nothing is found
+        assertThat(askService.ask(USER_ID, new AskRequest("find numerical metod assignment", null)).answer()).isEqualTo(NO_ANSWER);
+    }
+
+    @Test
+    void semanticCandidatesAreAddedAfterFilenameMatchesAndCappedAtThree() {
+        userOwns(NUMERICAL);
+        preflightFinds("doc-a", "doc-b", "doc-c");
+        for (String id : List.of("doc-a", "doc-b", "doc-c")) {
+            when(documentRepository.findByUserAndDocumentId(USER_ID, id)).thenReturn(Optional.of(sampleDocument(id, id + ".pdf")));
+        }
+
+        AskResponse response = askService.ask(USER_ID, new AskRequest("find numerical methods assignment", null));
+
+        assertThat(response.citations()).extracting(c -> c.fileName())
+                .containsExactly("NumericalMethods_Assignment1.pdf", "doc-a.pdf", "doc-b.pdf");
+    }
+
+    @Test
+    void aBareTopicWithAStrongFilenameMatchIsTreatedAsFileDiscovery() {
+        userOwns(NUMERICAL);
+        preflightFinds("doc-nm");
+        when(documentRepository.findByUserAndDocumentId(USER_ID, "doc-nm")).thenReturn(Optional.of(NUMERICAL));
+
+        AskResponse response = askService.ask(USER_ID, new AskRequest("numerical methods assignment", null));
+
+        assertThat(response.answer()).contains("NumericalMethods_Assignment1.pdf");
+        assertThat(response.citations()).hasSize(1);
+        assertThat(response.citations().get(0).snippet()).isEqualTo("relevant excerpt"); // from the semantic hit
+        verifyNoBedrockCall();
+    }
+
+    @Test
+    void aBareTopicWithoutAFilenameMatchStaysOnTheGroundedAskPath() {
+        userOwns(NUMERICAL);
+        preflightFinds("doc-nr");
+        when(documentRepository.findByUserAndDocumentId(USER_ID, "doc-nr"))
+                .thenReturn(Optional.of(sampleDocument("doc-nr", "lecture-notes.pdf")));
+        when(bedrockAgentRuntimeClient.retrieveAndGenerate(any(RetrieveAndGenerateRequest.class)))
+                .thenReturn(responseWithCitation("bedrock-session-1", "doc-nr", "Newton-Raphson iterates x = x - f/f'."));
+
+        AskResponse response = askService.ask(USER_ID, new AskRequest("Newton Raphson method", null));
+
+        assertThat(response.answer()).startsWith("Newton-Raphson");
+        assertThat(response.citations()).extracting(c -> c.fileName()).containsExactly("lecture-notes.pdf");
+        verify(bedrockAgentRuntimeClient).retrieveAndGenerate(any(RetrieveAndGenerateRequest.class));
+    }
+
+    @Test
+    void aBareTopicNeedsAllItsWordsInTheFilenameAndAQuestionNeverListsTheFilesystem() {
+        userOwns(NUMERICAL);
+        preflightFinds("doc-nm");
+        when(documentRepository.findByUserAndDocumentId(USER_ID, "doc-nm")).thenReturn(Optional.of(NUMERICAL));
+        when(bedrockAgentRuntimeClient.retrieveAndGenerate(any(RetrieveAndGenerateRequest.class)))
+                .thenReturn(responseWithCitation("bedrock-session-1", "doc-nm", "It asks you to apply the bisection method."));
+
+        // fact-seeking / content questions go to grounded generation, not to a file card...
+        AskResponse content = askService.ask(USER_ID, new AskRequest("what does my numerical methods assignment say?", null));
+        assertThat(content.answer()).startsWith("It asks you");
+        verify(bedrockAgentRuntimeClient).retrieveAndGenerate(any(RetrieveAndGenerateRequest.class));
+        // ...and a question is never even matched against filenames
+        verify(documentRepository, never()).listReadyByUser(any(), anyInt());
+
+        // an extra word that is not in the filename disqualifies a bare topic
+        askService.ask(USER_ID, new AskRequest("numerical methods assignment deadline", null));
+        verify(bedrockAgentRuntimeClient, times(2)).retrieveAndGenerate(any(RetrieveAndGenerateRequest.class));
+    }
+
+    @Test
+    void anUnrelatedFileLookupThatMatchesNeitherFilenamesNorTheSemanticGateIsTheDeterministicNoAnswer() {
+        userOwns(NUMERICAL);
+        preflightFindsNothing();
+
+        AskResponse response = askService.ask(USER_ID, new AskRequest("find my passport scan", null));
+
+        assertThat(response.answer()).isEqualTo(NO_ANSWER);
+        assertThat(response.citations()).isEmpty();
+        verifyNoBedrockCall();
+        verify(askSessionRepository, never()).save(any());
+    }
+
+    @Test
+    void anotherUsersMatchingFilenameIsNeverVisible() {
+        // Only the OWNER's partition contains the file; the caller is a different authenticated user.
+        when(documentRepository.listReadyByUser(eq(USER_ID), anyInt())).thenReturn(List.of(NUMERICAL));
+        when(documentRepository.listReadyByUser(eq("other-user"), anyInt())).thenReturn(List.of());
+        preflightFindsNothing();
+
+        AskResponse response = askService.ask("other-user", new AskRequest("find numerical method assignment", null));
+
+        assertThat(response.answer()).isEqualTo(NO_ANSWER);
+        assertThat(response.citations()).isEmpty();
+        verify(documentRepository).listReadyByUser(eq("other-user"), anyInt());
+        verify(documentRepository, never()).listReadyByUser(eq(USER_ID), anyInt());
+    }
+
+    @Test
+    void findByFilenameThenExplainThisAssignmentStaysGroundedInTheFoundFile() {
+        userOwns(NUMERICAL);
+        preflightFindsNothing(); // the filename alone resolved it
+        when(documentRepository.findByUserAndDocumentId(USER_ID, "doc-nm")).thenReturn(Optional.of(NUMERICAL));
+
+        AskResponse followed = findFileThenAsk("find numerical method assignment", "explain this assignment");
+
+        assertThat(followed.citations()).extracting(c -> c.fileName()).containsExactly("NumericalMethods_Assignment1.pdf");
     }
 }

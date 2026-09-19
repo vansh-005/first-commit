@@ -388,7 +388,8 @@ Bedrock `RetrieveAndGenerate` (Amazon Nova Lite via the APAC inference profile),
    generate directly, scoped to those files, with wording anchored to the file, asked once.
 3. Otherwise **preflight `Retrieve`** with the same tenant filter and the same 0.62 gate as `/search`.
 4. Nothing relevant -> **deterministic no-answer** (no model call, no citations, Bedrock session id null).
-5. **File-lookup intent** ("do I have ...", "find my ...") -> answered from DynamoDB metadata (the model never sees
+5. **File discovery** (explicit "find / show / do I have ...", or a bare topic that strongly matches one of the caller's
+   own filenames; resolved before the relevance check) -> answered from DynamoDB metadata plus semantic candidates (the model never sees
    filenames); writes `AskSession.contextDocumentIds`.
 6. Else `RetrieveAndGenerate`, scoped to `userId AND documentId IN (relevant | context)`, with a grounded prompt.
 7. Refusal / no grounding -> **one bounded recovery retry** (fresh Bedrock session, file-anchored wording); never on a

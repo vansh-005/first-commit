@@ -861,9 +861,16 @@ question first runs a preflight `Retrieve` with the same tenant filter and relev
 
 - nothing relevant (first turn) -> `answer` is `"I couldn't find anything in your memories that
   answers that."`, `citations` is `[]`, `sessionId` is `null`, and no model is called;
-- a "do I have ...?" / "find my ..." question -> answered from the relevant documents' real
-  filenames (`"I found 1 file in your memories that matches: ..."`, up to 3, each as a citation);
-  no model is called, and an existing `sessionId` is returned unchanged;
+- file discovery -> answered from real filenames (`"I found 1 file in your memories that matches: ..."`, up to 3,
+  each as a citation): filename matches against the caller's own READY documents first, then semantic
+  candidates that passed the relevance gate. Triggered by an explicit request (`find` / `locate` / `show` /
+  `search for` / `look for` / `do I have ...` / `is there ...` / `where is ...`, determiner optional) or by a
+  short bare topic whose every meaningful word is in a filename (exact match only). Questions, and
+  fact-seeking phrasings (`what does my ... say?`), are never discovery. Filename matching normalises
+  camelCase / `_ - .` / digits / extension, ignores filler words, treats singular/plural alike, and allows a
+  one-edit typo on tokens of 6+ characters (explicit requests only). Resolved before the relevance check, so a
+  filename-only match succeeds; no match on either signal is the deterministic no-answer. No model is called, and
+  an existing `sessionId` is returned unchanged;
 - otherwise `RetrieveAndGenerate` runs with a custom prompt (answer only from the user's own
   memories; say so when context is insufficient; no outside advice), restricted to the relevant
   documents, and only citations from those documents are returned. A refusal returns no citations.
