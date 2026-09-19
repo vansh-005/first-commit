@@ -2,6 +2,12 @@
 
 ## 1. Purpose
 
+> **Product name: Recollect.** Tagline: "Your digital life, remembered." (Phase 8 supersedes the
+> earlier hero copy in §10 and the "Memory Layer" working name.) Login is a split-screen layout on
+> desktop (§11 is otherwise unchanged); UI primitives are hand-written Tailwind rather than shadcn (§9).
+> The accent is tuned to `#4f5fff` (AA contrast with white text) with a lighter `--accent-text` for
+> small accent-coloured text — still cool cobalt/indigo, never orange.
+
 This document defines the frontend UX, information architecture, visual direction, and implementation rules for the hackathon MVP.
 
 The frontend is not treated as a thin shell over the backend. The hackathon explicitly evaluates **design and usability**, so the product must feel intentional, fast, and polished.

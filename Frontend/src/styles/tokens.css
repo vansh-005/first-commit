@@ -5,8 +5,9 @@
  * never peach/orange.
  */
 
+/* Not root-only, so a subtree (e.g. the login illustration) can pin itself to a theme. */
 :root,
-:root[data-theme="dark"] {
+[data-theme="dark"] {
   --background: #17181b;
   --surface: #1c1d21;
   --surface-raised: #232428;
@@ -16,10 +17,11 @@
 
   --text-primary: #f2f2f0;
   --text-secondary: #a3a3a8;
-  --text-muted: #75767d;
+  --text-muted: #8e8f96;
 
-  --accent: #5b6cff;
-  --accent-hover: #7180ff;
+  --accent: #4f5fff;
+  --accent-hover: #6472ff;
+  --accent-text: #93a0ff;
   --accent-subtle: rgba(91, 108, 255, 0.16);
   --focus-ring: #7180ff;
 
@@ -40,7 +42,7 @@
   color-scheme: dark;
 }
 
-:root[data-theme="light"] {
+[data-theme="light"] {
   --background: #f7f7f8;
   --surface: #ffffff;
   --surface-raised: #ffffff;
@@ -50,10 +52,11 @@
 
   --text-primary: #1a1b1e;
   --text-secondary: #55565c;
-  --text-muted: #85868d;
+  --text-muted: #6b6c73;
 
-  --accent: #5b6cff;
-  --accent-hover: #4756e6;
+  --accent: #4f5fff;
+  --accent-hover: #3f4ee0;
+  --accent-text: #3f4ee0;
   --accent-subtle: rgba(91, 108, 255, 0.1);
   --focus-ring: #5b6cff;
 

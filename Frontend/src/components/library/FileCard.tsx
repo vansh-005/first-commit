@@ -1,69 +1,70 @@
 import { getAccessUrl } from '@/api/client'
-import { useIntersectionOnce } from '@/hooks/useIntersectionOnce'
-import type { DocumentSummary, DocumentStatus } from '@/types/document'
+import { FileThumb } from '@/components/library/FileThumb'
+import { StatusBadge } from '@/components/library/StatusBadge'
+import { CATEGORY_LABEL } from '@/lib/fileTypes'
+import { formatBytes } from '@/lib/format'
+import type { DocumentSummary } from '@/types/document'
 import { useState } from 'react'
-
-const STATUS_LABEL: Record<DocumentStatus, string> = {
-  // Not "Uploading" — that's the active local XHR queue's job (see useFileUpload /
-  // UploadProgressList). A persisted UPLOAD_PENDING document (e.g. after a page reload)
-  // just hasn't been picked up by Phase 4's ingestion pipeline yet.
-  UPLOAD_PENDING: 'Awaiting processing',
-  UPLOADED: 'Processing',
-  INDEXING: 'Processing',
-  READY: 'Ready',
-  FAILED: 'Failed',
-}
 
 /** Docs/FRONTEND.md §14. Opens the file via a freshly-signed access URL rather than any
  * stored/cached link — Docs/API.md never returns a permanent URL. */
 export function FileCard({ document }: { document: DocumentSummary }) {
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
-  const [thumbnailFailed, setThumbnailFailed] = useState(false)
-
-  // Only fetches once the card actually scrolls into view, and only for images — a
-  // library with hundreds of files must not fire hundreds of access-url requests upfront.
-  // The bucket stays private throughout; only a short-lived presigned URL ever reaches
-  // the browser, never a raw S3 key.
-  const thumbnailRef = useIntersectionOnce<HTMLDivElement>(() => {
-    if (document.mediaCategory !== 'IMAGE') return
-    getAccessUrl(document.documentId)
-      .then((response) => setThumbnailUrl(response.url))
-      .catch(() => setThumbnailFailed(true))
-  })
+  const [openFailed, setOpenFailed] = useState(false)
 
   async function openFile() {
+    setOpenFailed(false)
     try {
       const { url } = await getAccessUrl(document.documentId)
       window.open(url, '_blank', 'noopener,noreferrer')
     } catch {
-      // No toast system yet in Phase 3 — silently ignored rather than a raw error.
+      setOpenFailed(true)
     }
   }
 
-  const showThumbnail = document.mediaCategory === 'IMAGE' && thumbnailUrl && !thumbnailFailed
-
   return (
-    <button
-      onClick={openFile}
-      className="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-4 text-left transition-colors hover:border-border-strong"
-    >
-      <div ref={thumbnailRef} className="h-24 overflow-hidden rounded-[var(--radius-md)] bg-surface-muted">
-        {showThumbnail ? (
-          <img
-            src={thumbnailUrl}
-            alt={document.fileName}
-            className="h-full w-full object-cover"
-            onError={() => setThumbnailFailed(true)}
+    <div className="animate-fade-up">
+      <button
+        onClick={openFile}
+        className="group flex w-full flex-col gap-3 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-3 text-left transition-all hover:-translate-y-0.5 hover:border-border-strong hover:shadow-[var(--shadow-md)]"
+      >
+        <div className="relative aspect-[4/3] overflow-hidden rounded-[var(--radius-md)] border border-border">
+          <FileThumb
+            documentId={document.documentId}
+            fileName={document.fileName}
+            mediaCategory={document.mediaCategory}
+            className="transition-transform duration-300 group-hover:scale-[1.03]"
           />
-        ) : (
-          <div className="flex h-full items-center justify-center text-xs text-text-muted">{document.mediaCategory}</div>
-        )}
+          <StatusBadge status={document.status} className="absolute left-2 top-2 backdrop-blur" />
+        </div>
+        <div className="min-w-0 px-0.5">
+          <p className="truncate text-sm font-medium text-text-primary">{document.fileName}</p>
+          {document.status === 'FAILED' ? (
+            <p className="mt-0.5 text-xs text-error">We couldn’t process this file. Try uploading it again.</p>
+          ) : (
+            <p className="mt-0.5 truncate text-xs text-text-muted">
+              {CATEGORY_LABEL[document.mediaCategory]} · {new Date(document.createdAt).toLocaleDateString()} ·{' '}
+              {formatBytes(document.sizeBytes)}
+            </p>
+          )}
+        </div>
+      </button>
+      {openFailed && (
+        <p role="alert" className="mt-1 px-1 text-xs text-error">
+          We couldn’t open this file. Please try again.
+        </p>
+      )}
+    </div>
+  )
+}
+
+export function FileCardSkeleton() {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-3">
+      <div className="skeleton aspect-[4/3] rounded-[var(--radius-md)]" />
+      <div className="flex flex-col gap-2 px-0.5">
+        <div className="skeleton h-3.5 w-3/4 rounded-full" />
+        <div className="skeleton h-3 w-1/2 rounded-full" />
       </div>
-      <p className="truncate text-sm font-medium text-text-primary">{document.fileName}</p>
-      <div className="flex items-center justify-between text-xs text-text-muted">
-        <span>{new Date(document.createdAt).toLocaleDateString()}</span>
-        <span>{STATUS_LABEL[document.status]}</span>
-      </div>
-    </button>
+    </div>
   )
 }

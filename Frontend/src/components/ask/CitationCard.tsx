@@ -1,66 +1,79 @@
 import { getAccessUrl } from '@/api/client'
+import { FileThumb } from '@/components/library/FileThumb'
+import { CATEGORY_LABEL, formatTimestamp } from '@/lib/fileTypes'
 import type { Citation } from '@/types/document'
-import { FileText, Image as ImageIcon, Music, Video } from 'lucide-react'
-
-const CATEGORY_ICON = {
-  IMAGE: ImageIcon,
-  VIDEO: Video,
-  AUDIO: Music,
-  DOCUMENT: FileText,
-  OTHER: FileText,
-} as const
-
-function formatTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-}
+import { Clock, ExternalLink } from 'lucide-react'
+import { useState } from 'react'
 
 /** Docs/FRONTEND.md §17. Carries no presigned URL — resolves a fresh one from the existing,
  * ownership-checked /access-url only when actually clicked, the same pattern SearchResultCard
  * uses (kept as a separate component rather than a shared one — Search and Ask stay
- * UI-decoupled per the approved Phase 6 plan). */
-export function CitationCard({ citation }: { citation: Citation }) {
+ * UI-decoupled per the approved Phase 6 plan). `index` is the source's 1-based number. */
+export function CitationCard({ citation, index }: { citation: Citation; index?: number }) {
+  const [opening, setOpening] = useState(false)
+  const [failed, setFailed] = useState(false)
+
   async function openSource() {
+    setOpening(true)
+    setFailed(false)
     try {
       const { url } = await getAccessUrl(citation.documentId)
       window.open(url, '_blank', 'noopener,noreferrer')
     } catch {
-      // No toast system yet — silently ignored, matching SearchResultCard's existing behavior.
+      setFailed(true)
+    } finally {
+      setOpening(false)
     }
   }
 
-  const Icon = CATEGORY_ICON[citation.mediaCategory]
-
   return (
-    <button
-      onClick={openSource}
-      className="flex w-full items-start gap-4 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-4 text-left transition-colors hover:border-border-strong"
-    >
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-surface-muted">
-        <Icon className="size-5 text-text-muted" aria-hidden="true" />
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-text-primary">{citation.fileName}</p>
-        <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{citation.snippet}</p>
-        <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
-          <span className="capitalize">{citation.mediaCategory.toLowerCase()}</span>
-          {citation.mediaTimestamp && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>
-                {formatTimestamp(citation.mediaTimestamp.startMs)} – {formatTimestamp(citation.mediaTimestamp.endMs)}
-              </span>
-            </>
-          )}
+    <div>
+      <button
+        onClick={openSource}
+        className="group flex w-full items-center gap-3.5 rounded-[var(--radius-lg)] border border-border bg-surface-raised p-3 text-left transition-colors hover:border-accent/50 hover:bg-surface-muted"
+      >
+        {index !== undefined && (
+          <span
+            aria-hidden="true"
+            className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-[11px] font-semibold text-accent-text"
+          >
+            {index}
+          </span>
+        )}
+        <div className="size-14 shrink-0 overflow-hidden rounded-[var(--radius-md)] border border-border">
+          <FileThumb
+            documentId={citation.documentId}
+            fileName={citation.fileName}
+            mediaCategory={citation.mediaCategory}
+          />
         </div>
-      </div>
 
-      <span className="shrink-0 self-center rounded-[var(--radius-md)] border border-border px-3 py-1.5 text-xs font-medium text-text-secondary">
-        Open
-      </span>
-    </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-text-primary">{citation.fileName}</p>
+          <p className="mt-0.5 line-clamp-2 text-[13px] leading-relaxed text-text-secondary">“{citation.snippet}”</p>
+          <div className="mt-1.5 flex items-center gap-2 text-xs text-text-muted">
+            <span>{CATEGORY_LABEL[citation.mediaCategory]}</span>
+            {citation.mediaTimestamp && (
+              <span className="flex items-center gap-1 rounded-full bg-accent-subtle px-2 py-0.5 text-accent-text">
+                <Clock className="size-3" aria-hidden="true" />
+                <span>
+                  {formatTimestamp(citation.mediaTimestamp.startMs)} – {formatTimestamp(citation.mediaTimestamp.endMs)}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        <span className="flex shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors group-hover:border-accent/50 group-hover:text-text-primary">
+          {opening ? 'Opening…' : 'Open'}
+          <ExternalLink className="size-3" aria-hidden="true" />
+        </span>
+      </button>
+      {failed && (
+        <p role="alert" className="mt-1 px-1 text-xs text-error">
+          We couldn’t open this file. Please try again.
+        </p>
+      )}
+    </div>
   )
 }

@@ -1,16 +1,17 @@
 import { searchDocuments } from '@/api/client'
-import { SearchResultCard } from '@/components/search/SearchResultCard'
+import { CategoryTabs } from '@/components/library/CategoryTabs'
+import { SearchResultCard, SearchResultSkeleton } from '@/components/search/SearchResultCard'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { ErrorState } from '@/components/ui/error-state'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { friendlyError } from '@/lib/errors'
 import type { MediaCategory, SearchResult } from '@/types/document'
+import { MessageSquare, Search, SearchX } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
-const CATEGORY_FILTERS: { label: string; value: MediaCategory | 'ALL' }[] = [
-  { label: 'All', value: 'ALL' },
-  { label: 'Documents', value: 'DOCUMENT' },
-  { label: 'Photos', value: 'IMAGE' },
-  { label: 'Videos', value: 'VIDEO' },
-  { label: 'Audio', value: 'AUDIO' },
-]
+const EXAMPLE_SEARCHES = ['that AWS credits screenshot', 'my electricity bill from August', 'the lecture about fading']
 
 /**
  * Docs/FRONTEND.md §15 + Docs/TASKS.md Phase 5. Owns the single canonical call to
@@ -19,14 +20,16 @@ const CATEGORY_FILTERS: { label: string; value: MediaCategory | 'ALL' }[] = [
  * visible above the results (per §15) rather than collapsing into a results-only view.
  */
 export function SearchPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const query = searchParams.get('q') ?? ''
+  usePageTitle(query ? `“${query}”` : 'Search')
 
   const [category, setCategory] = useState<MediaCategory | 'ALL'>('ALL')
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     if (!query.trim()) {
@@ -49,8 +52,8 @@ export function SearchPage() {
           setHasSearched(true)
         }
       })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message)
+      .catch((err) => {
+        if (!cancelled) setError(friendlyError(err, 'Search is unavailable right now. Please try again.'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -60,56 +63,86 @@ export function SearchPage() {
     return () => {
       cancelled = true
     }
-  }, [query, category])
+  }, [query, category, retryKey])
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-text-primary">Search</h1>
-        {query && <p className="mt-1 text-sm text-text-secondary">Results for "{query}"</p>}
-      </div>
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6">
+      {query ? (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
+            Results for <span className="text-accent-text">“{query}”</span>
+          </h1>
+          <p className="mt-1 min-h-5 text-sm text-text-muted" aria-live="polite">
+            {!loading && !error && hasSearched && `${results.length} ${results.length === 1 ? 'result' : 'results'}`}
+          </p>
+        </div>
+      ) : (
+        <h1 className="sr-only">Search</h1>
+      )}
 
-      {query && (
-        <div className="flex gap-2">
-          {CATEGORY_FILTERS.map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => setCategory(filter.value)}
-              className={
-                category === filter.value
-                  ? 'rounded-full bg-accent-subtle px-3 py-1.5 text-sm text-accent transition-colors'
-                  : 'rounded-full px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-muted'
-              }
-            >
-              {filter.label}
-            </button>
+      {query && <CategoryTabs value={category} onChange={setCategory} label="Filter results by type" />}
+
+      {!query && (
+        <EmptyState icon={Search} title="Search your memory" className="py-16">
+          Describe what you remember — not the filename. Try one of these:
+          <span className="mt-4 flex flex-wrap justify-center gap-2">
+            {EXAMPLE_SEARCHES.map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => setSearchParams({ q: example })}
+                className="rounded-full border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:border-accent/50 hover:text-text-primary"
+              >
+                {example}
+              </button>
+            ))}
+          </span>
+        </EmptyState>
+      )}
+
+      {loading && (
+        <div aria-busy="true" aria-label="Searching" className="flex flex-col gap-3">
+          {Array.from({ length: 4 }, (_, index) => (
+            <SearchResultSkeleton key={index} />
           ))}
         </div>
       )}
 
-      {!query && (
-        <div className="flex flex-col items-center gap-2 py-16 text-center">
-          <p className="text-text-primary">Search your memory</p>
-          <p className="text-sm text-text-muted">Try "AWS promotional credits" or "beach trip photos".</p>
-        </div>
-      )}
-
-      {loading && <p className="text-sm text-text-muted">Searching…</p>}
-      {error && <p className="text-sm text-error">Search is unavailable right now: {error}</p>}
+      {error && <ErrorState message={error} onRetry={() => setRetryKey((key) => key + 1)} />}
 
       {!loading && !error && hasSearched && results.length === 0 && (
-        <div className="flex flex-col items-center gap-2 py-16 text-center">
-          <p className="text-text-primary">No results found.</p>
-          <p className="text-sm text-text-muted">Try a different phrase or remove the category filter.</p>
-        </div>
+        <EmptyState
+          icon={SearchX}
+          title="No results found."
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link
+                to={`/app/ask?q=${encodeURIComponent(query)}`}
+                className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-md)] bg-accent px-4 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+              >
+                <MessageSquare className="size-4" aria-hidden="true" />
+                Ask your memory
+              </Link>
+              {category !== 'ALL' && (
+                <Button variant="secondary" onClick={() => setCategory('ALL')}>
+                  Show all types
+                </Button>
+              )}
+            </div>
+          }
+        >
+          Try describing it differently, or ask a question instead — Recollect can look across everything you’ve added.
+        </EmptyState>
       )}
 
       {!loading && !error && results.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {results.map((result) => (
-            <SearchResultCard key={result.document.documentId} result={result} />
+        <ul className="flex flex-col gap-3">
+          {results.map((result, index) => (
+            <li key={result.document.documentId} className="animate-fade-up" style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}>
+              <SearchResultCard result={result} query={query} />
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   )

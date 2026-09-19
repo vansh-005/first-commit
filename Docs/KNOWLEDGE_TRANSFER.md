@@ -16,7 +16,7 @@ other docs instead.
 
 ## Current Project State
 
-- **What this is:** Memory Layer — a multimodal personal memory layer.
+- **What this is:** **Recollect** (repo/AWS resources still say "Memory Layer") — a multimodal personal memory layer.
   Users upload files (PDFs, images, audio, video, documents), the system
   indexes them via a Bedrock Knowledge Base, and users later search/ask
   over their own corpus in natural language. See `Docs/PRODUCT.md`.
@@ -27,7 +27,8 @@ other docs instead.
   - Phase 7 (reliability/operational safety — alarms, stale-document
     cleanup, structured logging, deployment safeguards) was the most
     recently completed and deployed phase.
-  - Phase 8 (UX polish) is the next task — **not started.**
+  - Phase 8 (UX polish, frontend only) is **pushed to `main` (Amplify deploy) but NOT closed** —
+    awaiting a real-login review with actual data + one final polish pass; see "Phase 8 (UX polish) — status" below.
 - **Current commit:** `22fd9db` on `main` ("Add Phase 7: reliability and
   operational safety"). Run `git log -1` to confirm this is still current
   before trusting it.
@@ -326,14 +327,28 @@ These are load-bearing — see `AGENTS.md` "Security Rules" for the complete lis
 
 ---
 
-## Phase 8 Goal
+## Phase 8 (UX polish) — status
 
-Per `Docs/TASKS.md`: UX polish. Landing page, product tagline, smoother
-upload progress, processing skeletons, empty-state UX, search result
-highlighting, file previews where easy, mobile-friendly layout, better
-error messages, demo sample files. **Not started as of this file's writing.**
-Read `Docs/TASKS.md`'s Phase 8 section for the current checklist before
-starting.
+Frontend-only; no backend/infra/API changes. Implemented and locally validated (`tsc`, 75 vitest
+tests, `oxlint`, `vite build`) and pushed to `main` (Amplify auto-builds; there is no `cdk deploy`
+for this). Still open: real-login review of Home/Library/Search/Ask, then a final polish pass.
+
+What changed, in one paragraph: brand is **Recollect**; new landing + split-screen login; AppShell with
+a global upload dialog (single upload queue via `UploadProvider`), Cmd/Ctrl+K, avatar menu with
+Dark/Light/System theme (`recollect-theme` in localStorage); Ask/Home/Library/Search rebuilt on shared
+primitives (`FileThumb`, `StatusBadge`, `EmptyState`, `ErrorState`, `friendlyError`); library status
+updates via `useDocuments` polling. Full checklist: `Docs/TASKS.md` Phase 8.
+
+Things to know when touching the frontend:
+- **Polling contract:** `useDocuments` polls `GET /documents` every ~5s only while a document is
+  `UPLOAD_PENDING/UPLOADED/INDEXING`, backs off to 15s after 2 min, pauses on hidden tabs. Don't add
+  other pollers.
+- **Tests that mock `@/api/client`** must keep the real `ApiError` (`importOriginal`), because
+  `friendlyError` does `instanceof ApiError`. A bare `vi.mock` factory makes error paths throw.
+- jsdom has no `IntersectionObserver`; `useIntersectionOnce` no-ops without it.
+- Small accent-coloured text uses `text-accent-text` (AA-safe), not `text-accent`.
+- Routes under `/app` are lazy-loaded in `app/router.tsx`.
+- **Deferred:** the `/app/document/:id` detail page (still a stub). Demo data: `Docs/demo-samples/`.
 
 ---
 

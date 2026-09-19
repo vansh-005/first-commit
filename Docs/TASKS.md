@@ -808,16 +808,65 @@ stopping here for review per explicit instruction before any `cdk deploy`.
 
 # Phase 8 — UX polish
 
-- [ ] Better landing page
-- [ ] Clear product tagline
-- [ ] Smooth upload progress
-- [ ] Processing skeletons
-- [ ] Empty-state UX
-- [ ] Search result highlighting
-- [ ] File previews where easy
-- [ ] Mobile-friendly layout
-- [ ] Good error messages
-- [ ] Demo sample files
+Frontend/product polish only — no backend, infra, API-contract or AWS changes. The product is
+now branded **Recollect** ("Your digital life, remembered."). Implemented and validated locally
+(`tsc --noEmit`, `vitest run` — 75 tests / 18 files, `oxlint` — no errors, `vite build`).
+Landing/Login visual direction **approved**. Pushed to `main` for Amplify deploy; **Phase 8 is NOT closed** —
+awaiting a real-Cognito-login review of Home/Library/Search/Ask with actual data, then one final polish pass.
+
+- [x] Better landing page — nav, hero, product visual built from the real UI, 3 value props,
+      privacy statement, final CTA/footer (`pages/LandingPage`, `components/brand/ProductPreview`)
+- [x] Clear product tagline — "Your digital life, remembered."
+- [x] Login — split-screen on desktop (memory-card illustration pinned to the dark theme + focused
+      auth panel), redirect/loading/error feedback, collapses to the auth panel on narrow screens
+- [x] AppShell — Recollect wordmark, refined nav states, **global upload dialog** (one upload queue for
+      the whole app, works from any page), Cmd/Ctrl+K search focus, avatar user menu with
+      Dark/Light/System theme control, accessible mobile drawer (focus trap, Escape, focus return),
+      skip link, keyboard-resizable sidebar
+- [x] Ask — centered ~860px column, 3 clickable suggested prompts, distinct user/assistant turns,
+      sticky composer, answering skeleton, numbered source cards with thumbnails/timestamps/Open,
+      autoscroll, Retry, session-expired notice (question preserved, never auto-resent),
+      `?q=` prefill from Search's "Ask your memory" bridge
+- [x] Home — personalized greeting, large search + example searches, Upload/Ask quick actions,
+      Processing section (only when relevant), Recent memories
+- [x] Smooth upload progress — real browser->S3 progress bars only; friendly per-file errors;
+      a failed `POST /uploads` now fails every file visibly (previously left them "Queued" forever)
+- [x] Processing skeletons / Processing -> Ready polling — `useDocuments`: ~5s (15s after 2 min)
+      while any document is non-terminal, paused while the tab is hidden, zero calls when settled
+- [x] Empty-state UX — shared `EmptyState` (Home, Library incl. per-filter, Search, Ask)
+- [x] Search — clickable examples, skeleton results, snippet highlighting (React nodes, never
+      innerHTML), segmented category control, result count, no-results -> Ask bridge, no score shown
+- [x] File previews where easy — real image thumbnails; designed document / audio / video
+      placeholders (`FileThumb`), expired thumbnail URL refetched once before falling back
+- [x] Library — slim dropzone + page-wide drop overlay, Upload button, Ready/Processing/Failed
+      badges, Load more (opaque cursor), skeletons, retry
+- [x] Mobile-friendly layout — responsive grids, drawer nav, sticky composer, sheet-style dialog
+- [x] Good error messages — `friendlyError`: never surfaces service names/raw statuses; every
+      load/search/ask failure has a Retry
+- [x] Unsupported file types — soft, non-blocking "may not be searchable" hint while
+      uploading (`isLikelySearchable`); backend behaviour unchanged
+- [x] Expired presigned URLs — every open fetches a fresh access URL; failure shows an inline
+      message instead of silently doing nothing
+- [x] Accessibility — visible focus, labelled inputs, `aria-live` status regions, `aria-pressed`
+      filters, modal semantics, `prefers-reduced-motion`, AA-safe muted/accent text tokens,
+      per-page document titles
+- [x] Demo sample files — `Docs/demo-samples/` (5 realistic Markdown memories + demo script)
+- [x] Route-level code splitting — landing no longer pays for the authenticated app
+      (main bundle 333 kB; the >500 kB build warning is gone)
+- [ ] File-detail page (`/app/document/:id`) — **deliberately deferred**; still a stub, nothing links to it
+- [x] Landing hero verified at 1280x600, 1366x650 (mockup search + answer visible above the fold); Login collage re-laid out with no overlaps
+- [x] Pushed to `main` (Amplify auto-build)
+- [ ] Real-browser review with real data (Home, Library, Search, Ask), both themes, fresh + incognito, mobile widths
+- [ ] Final polish pass from that review
+
+## Phase 8 notes
+
+- UI primitives are hand-written Tailwind (Skeleton/Badge/EmptyState/ErrorState/dialog/menu) —
+  no shadcn/Radix dependency was added; no new runtime dependencies at all.
+- The Google Fonts stylesheet for Inter is loaded from `index.html` (the only new external request).
+- Landing has no dev-only API health badge (removed); public pages make no API calls.
+- Local theme preference key: `recollect-theme`. "Memory Layer" remains only in backend/infra
+  resource names (unchanged on purpose — renaming AWS resources is out of scope).
 
 ---
 

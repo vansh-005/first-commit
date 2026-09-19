@@ -20,7 +20,9 @@ export function useIntersectionOnce<T extends Element>(onIntersect: () => void) 
 
   useEffect(() => {
     const element = ref.current
-    if (!element) return
+    // No IntersectionObserver (very old browsers, jsdom): skip lazy loading; callers fall back
+    // to their type placeholder rather than fetching everything up front.
+    if (!element || typeof IntersectionObserver === 'undefined') return
 
     const observer = new IntersectionObserver(
       (entries) => {
