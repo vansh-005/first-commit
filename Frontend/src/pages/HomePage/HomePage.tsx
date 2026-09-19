@@ -1,4 +1,5 @@
 import { FileCard, FileCardSkeleton } from '@/components/library/FileCard'
+import { FileRow } from '@/components/library/FileRow'
 import { FileThumb } from '@/components/library/FileThumb'
 import { StatusBadge } from '@/components/library/StatusBadge'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -11,6 +12,10 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { useState } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { Link, useNavigate } from 'react-router-dom'
+
+// Up to this many recent memories render as full-width rows; beyond it, a card grid.
+const MAX_ROW_LAYOUT = 3
+const MAX_PROCESSING_ROWS = 4
 
 const EXAMPLE_SEARCHES = ['that AWS credits screenshot', 'my electricity bill', 'the lecture about fading']
 
@@ -129,22 +134,27 @@ export function HomePage() {
 
       {processingDocs.length > 0 && (
         <section aria-labelledby="processing-heading" aria-live="polite">
-          <h2 id="processing-heading" className="mb-3 text-sm font-medium text-text-secondary">
+          <h2 id="processing-heading" className="mb-2 text-sm font-medium text-text-secondary">
             Processing · {processingDocs.length}
           </h2>
-          <ul className="flex flex-col gap-2">
-            {processingDocs.map((document) => (
-              <li
-                key={document.documentId}
-                className="flex items-center gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2.5"
-              >
-                <div className="size-9 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border">
+          <ul className="divide-y divide-border overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface">
+            {processingDocs.slice(0, MAX_PROCESSING_ROWS).map((document) => (
+              <li key={document.documentId} className="flex items-center gap-3 px-3 py-2">
+                <div className="size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border">
                   <FileThumb documentId={document.documentId} fileName={document.fileName} mediaCategory={document.mediaCategory} />
                 </div>
-                <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{document.fileName}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{document.fileName}</span>
                 <StatusBadge status={document.status} />
               </li>
             ))}
+            {processingDocs.length > MAX_PROCESSING_ROWS && (
+              <li className="px-3 py-2 text-xs text-text-muted">
+                +{processingDocs.length - MAX_PROCESSING_ROWS} more —{' '}
+                <Link to="/app/library" className="text-accent-text hover:text-text-primary">
+                  see the library
+                </Link>
+              </li>
+            )}
           </ul>
         </section>
       )}
@@ -152,7 +162,7 @@ export function HomePage() {
       {loading ? (
         <section aria-label="Recent memories" aria-busy="true">
           <div className="skeleton mb-3 h-4 w-40 rounded-full" />
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
               <FileCardSkeleton key={index} />
             ))}
@@ -164,15 +174,24 @@ export function HomePage() {
             <h2 id="recent-heading" className="text-sm font-medium text-text-secondary">
               Recent memories
             </h2>
-            <Link to="/app/library" className="flex items-center gap-1 text-sm text-accent-text text-accent-hover">
+            <Link to="/app/library" className="flex items-center gap-1 text-sm text-accent-text hover:text-text-primary">
               View library <ArrowRight className="size-3.5" aria-hidden="true" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {recent.map((document) => (
-              <FileCard key={document.documentId} document={document} />
-            ))}
-          </div>
+          {recent.length <= MAX_ROW_LAYOUT ? (
+            // A handful of memories: full-width rows use the space; a lone grid tile would float.
+            <div className="flex flex-col gap-3">
+              {recent.map((document) => (
+                <FileRow key={document.documentId} document={document} />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+              {recent.map((document) => (
+                <FileCard key={document.documentId} document={document} />
+              ))}
+            </div>
+          )}
         </section>
       ) : (
         !error &&

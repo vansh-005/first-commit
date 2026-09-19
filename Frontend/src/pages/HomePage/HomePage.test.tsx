@@ -109,4 +109,27 @@ describe('HomePage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByRole('button', { name: /upload your first files/i })).toBeInTheDocument()
   })
+
+  it('uses full-width rows for a handful of recent memories instead of a lone grid tile', async () => {
+    vi.mocked(listDocuments).mockResolvedValue({ items: [doc('READY', 'a', 'one.pdf')], nextCursor: null })
+    renderHome()
+    await screen.findByText('one.pdf')
+    expect(screen.getByText('Open')).toBeInTheDocument()
+  })
+
+  it('switches to a card grid once there are more than three', async () => {
+    const items = ['a', 'b', 'c', 'd', 'e'].map((id, n) => ({ ...doc('READY', id, `file-${id}.pdf`), createdAt: `2026-09-1${n}T00:00:00Z` }))
+    vi.mocked(listDocuments).mockResolvedValue({ items, nextCursor: null })
+    renderHome()
+    await screen.findByText('file-a.pdf')
+    expect(screen.queryByText('Open')).not.toBeInTheDocument()
+  })
+
+  it('keeps Processing compact, capping the rows and pointing to the library for the rest', async () => {
+    const items = Array.from({ length: 7 }, (_, n) => ({ ...doc('INDEXING', `p${n}`, `busy-${n}.pdf`), createdAt: `2026-09-1${n}T00:00:00Z` }))
+    vi.mocked(listDocuments).mockResolvedValue({ items, nextCursor: null })
+    renderHome()
+    expect(await screen.findByRole('heading', { name: /processing · 7/i })).toBeInTheDocument()
+    expect(screen.getByText(/\+3 more/)).toBeInTheDocument()
+  })
 })

@@ -156,4 +156,30 @@ describe('AskPage', () => {
     expect(await screen.findByText(makeResponse().answer)).toBeInTheDocument()
     expect(askQuestion).toHaveBeenCalledTimes(2)
   })
+
+  it('presents retrieved items behind a decline as neutral "Context checked", not as Sources', async () => {
+    vi.mocked(askQuestion).mockResolvedValue(
+      makeResponse({
+        answer: 'I can not provide an answer to the question as the search results do not contain information that can answer the question.',
+      }),
+    )
+    renderAsk()
+    await userEvent.type(screen.getByPlaceholderText('Ask a question about your memory...'), 'boiling point of mercury on Jupiter')
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }))
+
+    expect(await screen.findByText(/context checked · 1 item/i)).toBeInTheDocument()
+    expect(screen.queryByText(/^Sources ·/)).not.toBeInTheDocument()
+    // Still reachable (relabeled, never hidden) inside the collapsed details.
+    expect(screen.getByText('internship-offer.pdf')).toBeInTheDocument()
+  })
+
+  it('keeps the numbered Sources presentation for a normal answer', async () => {
+    vi.mocked(askQuestion).mockResolvedValue(makeResponse())
+    renderAsk()
+    await userEvent.type(screen.getByPlaceholderText('Ask a question about your memory...'), 'What did my offer say?')
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }))
+
+    expect(await screen.findByText('Sources · 1')).toBeInTheDocument()
+    expect(screen.queryByText(/context checked/i)).not.toBeInTheDocument()
+  })
 })

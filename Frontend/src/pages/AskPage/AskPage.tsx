@@ -3,6 +3,7 @@ import { LogoMark } from '@/components/brand/Logo'
 import { CitationCard } from '@/components/ask/CitationCard'
 import { Button } from '@/components/ui/button'
 import { usePageTitle } from '@/hooks/usePageTitle'
+import { looksLikeNoAnswer } from '@/lib/askAnswer'
 import { friendlyError } from '@/lib/errors'
 import type { Citation } from '@/types/document'
 import { ArrowUp, CircleAlert, Info, RotateCcw, Sparkles } from 'lucide-react'
@@ -13,6 +14,8 @@ interface Turn {
   question: string
   answer: string
   citations: Citation[]
+  /** The answer reads as "couldn't find it in your files" (see looksLikeNoAnswer). */
+  noAnswer: boolean
 }
 
 const SUGGESTED_PROMPTS = [
@@ -82,7 +85,15 @@ export function AskPage() {
     try {
       const response = await askQuestion({ question: trimmed, sessionId })
       setSessionId(response.sessionId)
-      setTurns((previous) => [...previous, { question: trimmed, answer: response.answer, citations: response.citations }])
+      setTurns((previous) => [
+        ...previous,
+        {
+          question: trimmed,
+          answer: response.answer,
+          citations: response.citations,
+          noAnswer: looksLikeNoAnswer(response.answer),
+        },
+      ])
     } catch (err) {
       // The question is never lost: it goes back into the composer on every failure.
       setQuestion(trimmed)
@@ -163,16 +174,31 @@ export function AskPage() {
                 <UserBubble text={turn.question} />
                 <AssistantRow>
                   <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-text-primary">{turn.answer}</p>
-                  {turn.citations.length > 0 && (
-                    <div className="mt-5 flex flex-col gap-2">
-                      <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
-                        Sources · {turn.citations.length}
-                      </p>
-                      {turn.citations.map((citation, citationIndex) => (
-                        <CitationCard key={citation.citationId} citation={citation} index={citationIndex + 1} />
-                      ))}
-                    </div>
-                  )}
+                  {turn.citations.length > 0 &&
+                    (turn.noAnswer ? (
+                      // A "couldn't find it" answer still arrives with whatever was retrieved. Those
+                      // aren't sources for anything — present them neutrally, collapsed, not as citations.
+                      <details className="mt-4 rounded-[var(--radius-md)] border border-border bg-surface">
+                        <summary className="cursor-pointer select-none px-3 py-2 text-xs text-text-muted hover:text-text-secondary">
+                          Context checked · {turn.citations.length} {turn.citations.length === 1 ? 'item' : 'items'} — none
+                          answered your question
+                        </summary>
+                        <div className="flex flex-col gap-2 border-t border-border p-2">
+                          {turn.citations.map((citation) => (
+                            <CitationCard key={citation.citationId} citation={citation} />
+                          ))}
+                        </div>
+                      </details>
+                    ) : (
+                      <div className="mt-5 flex flex-col gap-2">
+                        <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                          Sources · {turn.citations.length}
+                        </p>
+                        {turn.citations.map((citation, citationIndex) => (
+                          <CitationCard key={citation.citationId} citation={citation} index={citationIndex + 1} />
+                        ))}
+                      </div>
+                    ))}
                 </AssistantRow>
               </section>
             ))}

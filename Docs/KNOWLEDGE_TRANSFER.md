@@ -348,6 +348,14 @@ Things to know when touching the frontend:
 - jsdom has no `IntersectionObserver`; `useIntersectionOnce` no-ops without it.
 - Small accent-coloured text uses `text-accent-text` (AA-safe), not `text-accent`.
 - Routes under `/app` are lazy-loaded in `app/router.tsx`.
+- **Snippets are display-sanitized** (`lib/snippet.ts`) — raw KB chunks contain Markdown/BDA `<figure>` markup.
+  Never render `snippet` directly; use `cleanSnippet`.
+- **Ask decline gotcha (verified live):** `RetrieveAndGenerate` gives a decline the *same shape* as a real
+  answer (no guardrail action; one citation spanning the text) and attaches all retrieved chunks. The UI
+  relabels those as "Context checked" via a text heuristic (`lib/askAnswer.ts`). Deterministic fix = a
+  prompt-template marker + backend flag (Phase 9).
+- **Download** = fresh `/access-url` -> `fetch` -> Blob (`lib/download.ts`, `useFileActions`); needs the
+  uploads bucket's CORS `GET` for the app origin (already configured). Delete is deferred to Phase 9.
 - **Deferred:** the `/app/document/:id` detail page (still a stub). Demo data: `Docs/demo-samples/`.
 
 ---

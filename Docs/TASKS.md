@@ -853,6 +853,27 @@ awaiting a real-Cognito-login review of Home/Library/Search/Ask with actual data
 - [x] Demo sample files — `Docs/demo-samples/` (5 realistic Markdown memories + demo script)
 - [x] Route-level code splitting — landing no longer pays for the authenticated app
       (main bundle 333 kB; the >500 kB build warning is gone)
+### Phase 8 review round 1 (first real-data feedback) — implemented locally, **not committed**
+
+- [x] Search/Ask snippets sanitized for display only (`lib/snippet.ts`): Markdown syntax and BDA
+      `<figure>`-style markup stripped, whitespace collapsed, clamped (~280 chars, 3 lines). Stored/indexed
+      content and the API response are unchanged.
+- [x] Ask decline state: a "couldn't find it" answer still arrives with every retrieved chunk attached,
+      so those are shown collapsed as neutral **"Context checked"** instead of numbered **Sources**.
+      Verified live against the KB that there is **no structural signal** (same shape as a normal answer:
+      no guardrail action, one citation spanning the whole text; only the reference count differs), so this
+      is a narrow text heuristic (`lib/askAnswer.ts`) that only *relabels* — never hides — so a wrong guess
+      costs a label, not a real source. A deterministic fix (prompt-template marker -> backend `grounded`
+      flag) is a Phase 9 backend item.
+- [x] Home balance: Processing is a compact capped list (+N more); Recent memories use full-width rows for
+      up to 3 items and a card grid beyond that (no lone tile floating in whitespace).
+- [x] **Download** added beside Open on Library/Home cards, Search results and Ask sources — same fresh,
+      ownership-checked `/access-url` flow, fetched to a Blob and saved under the real filename (S3 CORS
+      allows GET from the app; no API change). Files >200 MB fall back to opening in a tab.
+- [x] Fixed a class typo from the contrast pass (`text-accent-hover` missing its `hover:` on Home).
+- Delete is **explicitly not part of Phase 8** — see Phase 9 (needs coordinated original S3 + KB staging/
+  sidecar + DynamoDB + Knowledge Base/vector state).
+
 - [ ] File-detail page (`/app/document/:id`) — **deliberately deferred**; still a stub, nothing links to it
 - [x] Landing hero verified at 1280x600, 1366x650 (mockup search + answer visible above the fold); Login collage re-laid out with no overlaps
 - [x] Pushed to `main` (Amplify auto-build)
@@ -881,6 +902,10 @@ Only start after the MVP works end-to-end.
 - [ ] Resume/retry failed parts
 
 ## Deletion
+
+Deferred from Phase 8 on purpose: correct deletion must coordinate the original S3 object, the KB staging
+copy + `.metadata.json` sidecar, the DynamoDB record, and the Knowledge Base/vector state (re-sync), or
+deleted content stays retrievable.
 
 - [ ] `DELETE /documents/{id}`
 - [ ] Remove source

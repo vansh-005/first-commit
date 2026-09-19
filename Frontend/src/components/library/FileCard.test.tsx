@@ -67,6 +67,13 @@ describe('FileCard', () => {
     expect(getAccessUrl).not.toHaveBeenCalled()
   })
 
+  it('offers Download as a separate control from the card\'s Open action', () => {
+    render(<FileCard document={makeDocument()} />)
+    expect(screen.getByRole('button', { name: 'Download photo.png' })).toBeInTheDocument()
+    // Two sibling buttons (Open on the card, Download beside it) — never nested.
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+
   it('shows "Awaiting processing" for a persisted UPLOAD_PENDING document, not "Uploading"', () => {
     render(<FileCard document={makeDocument({ status: 'UPLOAD_PENDING' })} />)
     expect(screen.getByText('Awaiting processing')).toBeInTheDocument()
