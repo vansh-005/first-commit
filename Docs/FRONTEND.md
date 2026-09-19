@@ -172,7 +172,7 @@ Recommended routes:
 /app/ask
     Ask-your-memory experience
 
-/app/document/:documentId
+/app/document/:documentId   (specified, not part of the delivered MVP scope)
     File details / preview
 ```
 

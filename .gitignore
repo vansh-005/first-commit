@@ -1,0 +1,34 @@
+# IDE / editor state
+.idea/
+.vscode/
+*.iml
+*.swp
+.DS_Store
+Thumbs.db
+
+# Build output
+target/
+dist/
+build/
+node_modules/
+*.tsbuildinfo
+coverage/
+
+# Generated CDK / deployment output
+cdk.out/
+cdk-outputs*.json
+.cdk.staging/
+
+# Local environment and secrets (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
+*.log
+
+# Local tooling
+__pycache__/
+*.pyc
+.claude/

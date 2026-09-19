@@ -5,7 +5,7 @@
 This document covers running and operating the deployed Memory Layer system: alarms, DLQ
 inspection/redrive, the deployment procedure, smoke testing, and stale-document handling.
 
-It is Phase 7's deliverable. It does not cover product/API behavior (`Docs/API.md`), the data
+It does not cover product/API behavior (`Docs/API.md`), the data
 model (`Docs/DATA_MODEL.md`), or architecture decisions (`Docs/ARCHITECTURE.md`) — only how to
 keep the deployed system healthy and how to deploy it safely.
 

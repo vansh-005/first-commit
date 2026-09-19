@@ -1,7 +1,0 @@
-{
-  "MemoryLayerApiStack": {
-    "HealthUrl": "https://0sby0h3d1a.execute-api.ap-south-1.amazonaws.com/api/v1/health",
-    "ApiEndpoint": "https://0sby0h3d1a.execute-api.ap-south-1.amazonaws.com",
-    "ExportsOutputFnGetAttHttpApiF5A9A8A7ApiEndpoint082134F8": "https://0sby0h3d1a.execute-api.ap-south-1.amazonaws.com"
-  }
-}

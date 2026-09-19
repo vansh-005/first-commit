@@ -20,7 +20,7 @@ other docs instead.
   Users upload files (PDFs, images, audio, video, documents), the system
   indexes them via a Bedrock Knowledge Base, and users later search/ask
   over their own corpus in natural language. See `Docs/PRODUCT.md`.
-- **Current deployed environment:** live in AWS account `889168907297`,
+- **Current deployed environment:** live in AWS account `<account-id>`,
   region `ap-south-1`. All 6 app stacks are deployed and healthy.
 - **Phase status** (see `Docs/TASKS.md` for full detail):
   - Phases 1–7: **implemented, tested, and deployed.**
@@ -55,7 +55,7 @@ Don't introduce a new top-level directory without a clear reason (`AGENTS.md`).
 
 ## AWS Environment
 
-Region: `ap-south-1`. Account: `889168907297`.
+Region: `ap-south-1`. Account: `<account-id>`.
 
 Deployed CDK stacks (all currently healthy, `cdk diff` clean as of Phase 7):
 
@@ -68,21 +68,22 @@ MemoryLayerFrontendStack    Amplify app (config only — content deploys via git
 MemoryLayerAlarmsStack      SNS topic + 8 CloudWatch alarms (Phase 7)
 ```
 
-Key deployed resource identifiers (none of these are secrets):
+Key deployed resources (identifiers are redacted in this public repository — resolve them with the AWS CLI
+commands below; none of them are secrets, but they are account-specific):
 
 | Resource | Value |
 |---|---|
-| Cognito user pool ID | `ap-south-1_EcoZ4MroP` |
-| Cognito app client ID | `2pa5i5dfkq23gok012n92t5okl` (`memory-layer-spa`) |
-| Cognito hosted domain | `memory-layer-auth-907297` |
+| Cognito user pool ID | `<user-pool-id>` |
+| Cognito app client ID | `<app-client-id>` (`memory-layer-spa`) |
+| Cognito hosted domain | `<hosted-domain-prefix>` |
 | DynamoDB table | `MemoryLayer` (single-table design, TTL attribute `expiresAt`, enabled) |
-| Uploads bucket | `memorylayerdatastack-uploadsbucket5e5e9b64-eek8gy7afvw7` |
+| Uploads bucket | `<uploads-bucket>` |
 | Ingestion queue / DLQ | `MemoryLayerDataStack-IngestionQueue9CC91140-*` / `...IngestionDLQF0F102AE-*` |
-| Bedrock Knowledge Base ID | `MESMX1P9DN` |
-| KB data sources | multimodal `FIO4MGIGSJ`, text `ZOWKOQGHGB` |
+| Bedrock Knowledge Base ID | `<knowledge-base-id>` |
+| KB data sources | multimodal `<multimodal-data-source-id>`, text `<text-data-source-id>` |
 | KB embedding model | `amazon.titan-embed-text-v2:0` |
 | `/ask` generation model | Amazon Nova Lite via APAC cross-region inference profile (`apac.amazon.nova-lite-v1:0`) |
-| API Gateway endpoint | `https://0sby0h3d1a.execute-api.ap-south-1.amazonaws.com` |
+| API Gateway endpoint | `https://<api-id>.execute-api.ap-south-1.amazonaws.com` |
 | Amplify app ID / domain | `d28nd6lc9fjyiv` / `d28nd6lc9fjyiv.amplifyapp.com` |
 | SNS alarm topic | `memory-layer-alarms` (subscriber: see `ALARM_EMAIL` below) |
 
@@ -97,8 +98,8 @@ table can drift if someone deploys outside this file's discipline.
 
 | Variable | Used by | Where it comes from |
 |---|---|---|
-| `GOOGLE_OAUTH_CLIENT_ID` | `InfraApp` (CDK synth) | The real Google OAuth client ID already registered against Cognito's Google IdP. Retrievable without a login via `aws cognito-idp describe-identity-provider --user-pool-id ap-south-1_EcoZ4MroP --provider-name Google --region ap-south-1 --query "IdentityProvider.ProviderDetails.client_id"` — it is not secret (only the OAuth client *secret* is). |
-| `ALARM_EMAIL` | `InfraApp` (CDK synth) | Address that should receive CloudWatch alarm notifications. Currently `vansharcade324@gmail.com`. Changing it and redeploying `MemoryLayerAlarmsStack` removes the old SNS subscription and sends a new confirmation email to the new address. |
+| `GOOGLE_OAUTH_CLIENT_ID` | `InfraApp` (CDK synth) | The real Google OAuth client ID already registered against Cognito's Google IdP. Retrievable without a login via `aws cognito-idp describe-identity-provider --user-pool-id <user-pool-id> --provider-name Google --region ap-south-1 --query "IdentityProvider.ProviderDetails.client_id"` — it is not secret (only the OAuth client *secret* is). |
+| `ALARM_EMAIL` | `InfraApp` (CDK synth) | Address that should receive CloudWatch alarm notifications. Set to the project owner's address at deploy time. Changing it and redeploying `MemoryLayerAlarmsStack` removes the old SNS subscription and sends a new confirmation email to the new address. |
 | `SMOKE_ACCESS_TOKEN` | `Infra/smoke-test.ps1` (optional) | A manually obtained Cognito access token (sign in through the real app, copy from browser devtools). Not required for the public `/health` check; required to exercise `/documents`, `/search`, `/ask` against the real JWT authorizer. |
 
 **Never** commit real values for these, and never let `InfraApp` fall back to

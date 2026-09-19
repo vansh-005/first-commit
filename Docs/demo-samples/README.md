@@ -1,8 +1,7 @@
 # Demo sample files
 
-Small, realistic, visually distinct memories for the hackathon demo — not `test.pdf` / `file1.png`
-(see `Docs/FRONTEND.md` §25). Upload them through the app (Library → Upload) — Markdown goes through
-the text-document path, which was verified end to end in Phase 4.
+Sanitized demo fixtures: small, realistic, visually distinct memories that contain only fictional details.
+Upload them through the app (Library → Upload); Markdown goes through the text-document ingestion path.
 
 For a richer demo, add a few real assets alongside these: an AWS credits **screenshot** (PNG/JPG),
 a short **voice memo** or lecture clip (M4A/MP3/WAV, real speech), and a short **video** (MP4).
@@ -20,4 +19,4 @@ Image / audio / video are what exercise the multimodal path and timestamped cita
 | Ask (follow-up) | "And what was the monthly stipend?" | ₹60,000 — follow-up resolved from the previous turn |
 | Ask | "When does my laptop warranty end?" | 11 March 2028, cites `laptop-warranty-receipt.md` |
 
-The Markdown files contain fictional personal details only.
+All fixture content is fictional; none of it is real personal data.

@@ -207,14 +207,13 @@ This route must not query Bedrock or other expensive downstream services.
 
 ---
 
-# 8a. Internal diagnostic route (Phase 2, temporary)
+# 8a. Identity route
 
 ## `GET /api/v1/me`
 
-**This is not a permanent product endpoint.** It exists solely to prove the Cognito JWT
-authorizer, audience/issuer validation, and the `memory-api/access` custom scope requirement
-work end to end, since Phase 2 ships before any real protected business endpoint exists.
-Remove or repurpose once Phase 3+ endpoints make it redundant for that purpose.
+Returns the authenticated caller's identity claims. The frontend uses it to confirm a session, and it doubles as
+an end-to-end probe of the Cognito JWT authorizer, audience/issuer validation and the `memory-api/access` custom
+scope requirement.
 
 Authentication:
 
