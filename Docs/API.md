@@ -921,8 +921,21 @@ ownership-checked `GET /documents/{documentId}/access-url` (§17) only when the 
 actually clicked — not a URL pre-issued and embedded in this response, which could partially
 expire before a user reads a long answer and clicks a source later.
 
-`sessionId` is **`null`** when there is no conversation to continue (the first-turn no-answer and
-find cases above). Clients must treat `null` as "start fresh next turn".
+`sessionId` is **`null`** only when there is no conversation to continue (the first-turn *no-answer*
+case above). A "do I have ...?" find that resolves file(s) **does** return a `sessionId` even though no model
+ran: the backend stores the resolved documents as server-owned conversational context
+(`Docs/DATA_MODEL.md` §15.1), so a follow-up such as "explain this assignment" or "summarize it" — sent with that
+`sessionId` — retrieves from those files (`userId AND documentId IN context`) instead of being relevance-gated
+globally. The client never supplies document ids, and a `sessionId` that isn't the caller's resolves to
+`ASK_SESSION_EXPIRED`. Clients must treat a `null` `sessionId` as "start fresh next turn".
+
+**Grounding retry.** `RetrieveAndGenerate`'s own retrieval is unreliable for short, vague messages. When
+relevant documents are known (they passed the gate or came from the conversation context) and the first
+generation is a refusal that retrieved nothing — or, for a context-scoped follow-up, any refusal/ungrounded
+answer — the backend retries **once**, in a fresh Bedrock session, with an anchored form of the same question.
+Bedrock's own fixed "Sorry, I am unable to assist you with this request." is treated as a refusal and replaced
+by the deterministic no-answer sentence. A context-scoped answer that comes back with no reference objects cites
+the context file(s) themselves.
 
 ### `ASK_SESSION_EXPIRED`
 

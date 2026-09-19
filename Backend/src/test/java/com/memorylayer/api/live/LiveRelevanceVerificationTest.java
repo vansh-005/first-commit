@@ -198,4 +198,38 @@ class LiveRelevanceVerificationTest {
         assertThat(second.sessionId()).isEqualTo(first.sessionId());
         assertThat(second.answer()).isNotBlank();
     }
+
+    @Test
+    void findThenExplainAndSummarizeThisAssignmentReadTheFoundFile() {
+        AskResponse found = askService.ask(userB, new AskRequest("do I have a numerical methods assignment?", null));
+        show("ASK find  do I have a numerical methods assignment?", found);
+        assertThat(found.citations()).extracting(c -> c.fileName()).containsExactly("NumericalMethods_Assignment1.pdf");
+        assertThat(found.sessionId()).isNotBlank();
+
+        AskResponse explained = askService.ask(userB, new AskRequest("explain this assignment", found.sessionId()));
+        show("ASK follow-up  explain this assignment", explained);
+        assertThat(explained.answer()).isNotEqualTo(NO_ANSWER);
+        assertThat(explained.citations()).extracting(c -> c.fileName()).containsOnly("NumericalMethods_Assignment1.pdf");
+        assertThat(explained.sessionId()).isEqualTo(found.sessionId());
+
+        AskResponse summarized = askService.ask(userB, new AskRequest("summarize it", found.sessionId()));
+        show("ASK follow-up  summarize it", summarized);
+        assertThat(summarized.answer()).isNotEqualTo(NO_ANSWER);
+        assertThat(summarized.citations()).extracting(c -> c.fileName()).containsOnly("NumericalMethods_Assignment1.pdf");
+
+        // Other wordings of the same deictic request, including ones Bedrock's own retrieval mishandled unaided.
+        for (String wording : new String[]{"what is question 2?", "tell me about this assignment", "please explain this assignment"}) {
+            AskResponse other = askService.ask(userB, new AskRequest(wording, found.sessionId()));
+            show("ASK follow-up  " + wording, other);
+            assertThat(other.answer()).as(wording).isNotEqualTo(NO_ANSWER);
+            assertThat(other.citations()).as(wording).extracting(c -> c.fileName()).containsOnly("NumericalMethods_Assignment1.pdf");
+        }
+
+        // A brand-new conversation borrows no context: for an account with no assignment, the same words are simply
+        // relevance-gated to a no-answer (for user B they can legitimately match the file on their own).
+        AskResponse fresh = askService.ask(userA, new AskRequest("explain this assignment", null));
+        show("ASK new conversation (account with no assignment)  explain this assignment", fresh);
+        assertThat(fresh.answer()).isEqualTo(NO_ANSWER);
+        assertThat(fresh.citations()).isEmpty();
+    }
 }

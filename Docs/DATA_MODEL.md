@@ -602,6 +602,7 @@ SK = ASK_SESSION#<applicationSessionId>
   "applicationSessionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
   "userId": "abc123",
   "bedrockSessionId": "<raw Bedrock RetrieveAndGenerate sessionId>",
+  "contextDocumentIds": ["<documentId the conversation has resolved>"],
 
   "updatedAt": "2026-09-19T03:00:00Z",
   "expiresAt": 1790003600
@@ -610,7 +611,14 @@ SK = ASK_SESSION#<applicationSessionId>
 
 - `applicationSessionId` is a backend-generated UUID — the only session identifier the
   frontend ever sees or sends back.
-- `bedrockSessionId` never leaves the backend.
+- `bedrockSessionId` never leaves the backend, and is **nullable**: a conversation can exist before any
+  generation has happened (see `contextDocumentIds`), and gains one the first time `RetrieveAndGenerate` runs.
+- `contextDocumentIds` (optional list, Phase 8) is **server-owned conversational document context**: the
+  documents this conversation has already resolved. Today it is written only by the "do I have ...?" find
+  path, which involves no Bedrock generation and so no Bedrock session. It lets a deictic follow-up ("explain
+  this assignment", "summarize it", "what is question 2?") retrieve from that file instead of being
+  relevance-gated globally. The client can never supply it, and every turn re-checks each id against the
+  authenticated user's own documents (`USER#<sub>` lookup), silently dropping any that don't resolve.
 - `expiresAt` is a DynamoDB TTL attribute (epoch seconds, same `expiresAt` attribute the table
   already uses for `IngestionJob` records, §14) — a cleanup safety net for abandoned
   conversations, independent of whatever TTL Bedrock applies to the underlying session itself
@@ -642,6 +650,11 @@ backend calls RetrieveAndGenerate with no session
       |
       v
 backend generates applicationSessionId, stores {bedrockSessionId}, returns applicationSessionId
+
+OR (find path, no generation): backend resolves file(s) via the gated Retrieve,
+      stores {contextDocumentIds, bedrockSessionId = null}, returns applicationSessionId
+      -> next turn: retrieval scoped to userId AND documentId IN contextDocumentIds
+      -> RetrieveAndGenerate runs; its bedrockSessionId is saved into the SAME AskSession (context kept)
       |
       v
 frontend sends that applicationSessionId on the next /ask

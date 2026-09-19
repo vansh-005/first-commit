@@ -914,6 +914,34 @@ awaiting a real-Cognito-login review of Home/Library/Search/Ask with actual data
       user's real sessionId -> 409; contextual follow-up -> same session, grounded. CloudWatch for the window:
       15 requests, only the deliberate 409, no other errors.
 - [x] Frontend pushed to `main` (Amplify build) after the backend passed — **stopped for browser review**
+- [x] **Conversational document context (follow-up to browser review):** find -> "explain this assignment" used to
+      return the no-answer because the find path stored no conversation. `AskSession` now carries a server-owned
+      `contextDocumentIds` (bedrockSessionId nullable); a find creates/updates the session and returns its id; the
+      next turn retrieves scoped to `userId AND documentId IN context` (no global gate); the Bedrock session id
+      is saved into the same AskSession. Context is re-verified against the user's own documents every turn.
+      Global 0.62 threshold unchanged. Backend tests: 155 (find->explain, find->summarize, question-number,
+      cross-user/foreign context ignored, fresh conversation still gated, find replaces context, retry rules).
+- [x] **Live finding while verifying that:** `RetrieveAndGenerate`'s own retrieval fails for some short deictic
+      wordings (0 references) although a scoped `Retrieve` with the identical filter returns the file's chunks;
+      5 of 12 wordings failed, one flakily. Measured fixes: relaxed refusal rule in the prompt (10/20 -> 16/20), and
+      a structural, generic anchored retry ("Describe the contents of the file. Then: <question>", 16/16); filename
+      prefixing and capitalisation/punctuation normalisation did NOT help; a custom orchestration prompt did not
+      help. Also handled: Bedrock's canned "Sorry, I am unable to assist you with this request." (treated as a
+      refusal), and context-scoped answers with no reference objects (cite the context file).
+- [x] Live-verified against the real KB (8/8, real service classes): find -> explain / summarize / question 2 /
+      tell me about / please explain all answer from the found file with it cited (repeated runs); a new
+      conversation for an account with no assignment is still gated to the no-answer; all earlier cases unchanged.
+      **Deployed as Lambda `live` = version 17** (see the next item).
+- [x] **API Lambda timeout 10s -> 28s** (ApiStack; HTTP API integration `TimeoutInMillis` made explicit at 30000, a
+      test enforces Lambda < gateway). Found while verifying v16: a retrying Ask turn made two generations and hit
+      the 10s ceiling (3 of 4 attempts timed out). Also: the FIRST context-only turn (contextDocumentIds non-empty,
+      bedrockSessionId null) now sends the anchored wording first, ONCE (state-based, no failed attempt beforehand);
+      the recovery retry remains for later turns only.
+- [x] **v17 live-verified through the deployed alias:** exact browser sequence (find -> explain -> question 2 ->
+      summarize) passes, plus the full regression suite (16/16). Exact per-invocation latency (warmed, log-tail
+      REPORT): absent Ask ~0.2s, find ~0.7-1.0s, known-content Ask ~2s (Tata) / ~4-7s (image-page PDF), first
+      post-find explain 5.9-8.9s (one generation, always grounded+cited), later turns 4-11s, actual recovery
+      retries 6.6-11.4s (5 observed). 51 invocations on v17: 0 timeouts, 0 5xx, max 12.5s.
 - [ ] Known limits: a 0.62 gate drops vague topical queries (e.g. "Newton Raphson method", ~0.61); Ask now makes
       one extra `Retrieve` per question (added latency not yet measured in Lambda)
 

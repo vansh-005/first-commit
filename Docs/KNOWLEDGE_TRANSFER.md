@@ -371,6 +371,19 @@ Things to know when touching the frontend:
   lives in the `x-amz-bedrock-kb-description` metadata.
 - **Live verification harness:** `LiveRelevanceVerificationTest` (skipped unless `LIVE_KB=1`; needs
   `KNOWLEDGE_BASE_ID`, `ASK_MODEL_ARN`, `LIVE_USER_A/B`, `LIVE_DOCS_JSON`). It calls the real KB read-only.
+- **API Lambda timeout is 28s** (ApiStack), below the 30s HTTP API integration ceiling (explicit `TimeoutInMillis`).
+  Ask can do a preflight `Retrieve` + one or two generations; latency is ~2-5s normally, up to ~12s for a retrying
+  turn. Don't lower it below ~20s without re-measuring. The first context-only turn asks the anchored wording once
+  (no failed attempt first).
+- **Ask conversational context:** `AskSession.contextDocumentIds` (server-owned; set by the find path; bedrockSessionId
+  nullable) scopes deictic follow-ups to the found file. Details: `Docs/DATA_MODEL.md` §15.1, `Docs/API.md` §20.
+- **`RetrieveAndGenerate` gotchas (verified live):** its own retrieval can return **zero references** for short
+  vague messages even when a scoped `Retrieve` with the same filter finds the file (wording-dependent, some
+  deterministic); failures cluster deep inside long Bedrock sessions; Bedrock can return the fixed string "Sorry, I
+  am unable to assist you with this request." instead of an answer. The backend handles these with one structural
+  anchored retry in a fresh session (`AskService.needsAnchoredRetry`). Don't 'fix' this with filename-prefixing
+  or punctuation normalisation — both were measured to not help. A fully deterministic alternative would be our own
+  scoped `Retrieve` + a direct model call (an architecture change: `/ask` is specified as `RetrieveAndGenerate`).
 - **Deferred:** the `/app/document/:id` detail page (still a stub). Demo data: `Docs/demo-samples/`.
 
 ---

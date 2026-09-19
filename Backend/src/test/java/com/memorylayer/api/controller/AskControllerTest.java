@@ -25,6 +25,7 @@ import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveRespons
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveAndGenerateResponse;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrievedReference;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -232,5 +233,25 @@ class AskControllerTest {
         var captor = org.mockito.ArgumentCaptor.forClass(RetrieveAndGenerateRequest.class);
         verify(bedrockAgentRuntimeClient).retrieveAndGenerate(captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().sessionId()).isEqualTo("raw-bedrock-session-id");
+    }
+
+    @Test
+    void aClientCannotSupplyDocumentContextItIsIgnoredAndTheQuestionIsStillGated() throws Exception {
+        // AskRequest has no context/document field, so these are silently dropped; with nothing relevant the
+        // question gets the deterministic no-answer and generation is never invoked.
+        when(bedrockAgentRuntimeClient.retrieve(any(RetrieveRequest.class)))
+                .thenReturn(RetrieveResponse.builder().retrievalResults(List.of()).build());
+
+        mockMvc.perform(post("/api/v1/ask")
+                        .requestAttr(RequestReader.HTTP_API_CONTEXT_PROPERTY, AuthorizedRequestSupport.contextForSub(USER_ID))
+                        .contentType("application/json")
+                        .content("{ \"question\": \"explain this assignment\", \"contextDocumentIds\": [\"someone-elses-doc\"],"
+                                + " \"documentIds\": [\"someone-elses-doc\"] }"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value("I couldn't find anything in your memories that answers that."))
+                .andExpect(jsonPath("$.citations.length()").value(0));
+
+        org.mockito.Mockito.verify(bedrockAgentRuntimeClient, org.mockito.Mockito.never())
+                .retrieveAndGenerate(any(RetrieveAndGenerateRequest.class));
     }
 }

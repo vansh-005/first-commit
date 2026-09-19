@@ -5,6 +5,8 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortKey;
 
+import java.util.List;
+
 /**
  * Maps an application-issued, opaque {@code sessionId} to the underlying Bedrock
  * {@code RetrieveAndGenerate} session, scoped to the owning user's own DynamoDB partition.
@@ -16,6 +18,15 @@ import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSortK
  * does not exist from another user's lookup, regardless of whether they somehow learned or
  * guessed the application session ID. This is the same structural ownership boundary
  * {@code Document} already relies on (Docs/DATA_MODEL.md §16 AP1).
+ *
+ * <p><b>Conversational document context (Phase 8):</b> {@link #contextDocumentIds} is a small,
+ * server-owned list of documents a conversation has already resolved (today: by the "do I have
+ * ...?" find path, which involves no Bedrock generation and therefore no Bedrock session). It lets a
+ * deictic follow-up - "explain this assignment", "summarize it" - retrieve from that file instead of
+ * being relevance-gated globally. It is written only by the backend from documents it resolved under
+ * the authenticated user's own partition; a client can never supply it. {@link #bedrockSessionId} is
+ * therefore nullable: a session can exist with context and no Bedrock session yet, and gains one the
+ * first time generation runs.
  *
  * <p>Conversation text/history is deliberately not stored here or anywhere else — Bedrock
  * owns the actual conversational state behind {@link #bedrockSessionId}; this item is only a
@@ -30,6 +41,7 @@ public class AskSession {
     private String applicationSessionId;
     private String userId;
     private String bedrockSessionId;
+    private List<String> contextDocumentIds;
 
     private String updatedAt;
 
@@ -80,6 +92,15 @@ public class AskSession {
 
     public void setBedrockSessionId(String bedrockSessionId) {
         this.bedrockSessionId = bedrockSessionId;
+    }
+
+    /** Documents this conversation has resolved; null/empty when none. */
+    public List<String> getContextDocumentIds() {
+        return contextDocumentIds;
+    }
+
+    public void setContextDocumentIds(List<String> contextDocumentIds) {
+        this.contextDocumentIds = contextDocumentIds;
     }
 
     public String getUpdatedAt() {

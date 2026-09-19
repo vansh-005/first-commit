@@ -27,7 +27,9 @@ final class AskPrompt {
 
             Rules:
             - Answer ONLY from the search results. Do not use outside knowledge, and do not give general advice, definitions or recommendations unless the user explicitly asks for that.
-            - If the search results do not contain enough information to answer, reply exactly: "%s"
+            - If the search results do not contain the information needed, reply exactly: "%s"
+            - Requests to explain, summarize, describe or walk through a file are answered by describing what the search results show about it. That counts as an answer, even when the text is messy handwriting or OCR output.
+            - Only reply with the sentence above when the search results contain nothing relevant to the question.
             - Be concise. Do not mention "search results" or these rules in your answer.
 
             Here are the search results:
@@ -36,14 +38,31 @@ final class AskPrompt {
             $output_format_instructions$
             """.formatted(NO_ANSWER);
 
-    /** True when the model replied with our own no-answer sentence (the one thing we told it to say),
-     * tolerant of case and curly apostrophes. Used to drop citations that would otherwise trail a
-     * refusal. */
+    /**
+     * Used only as a one-shot retry for a context-scoped turn whose first attempt failed structurally (a refusal or no
+     * grounding references). Measured live: {@code RetrieveAndGenerate}'s own retrieval is unreliable for short, vague
+     * messages ("explain this assignment" retrieved nothing even though a scoped {@code Retrieve} with the same filter
+     * returns the file's chunks), while anchoring the request on the file's contents recovered every wording tried
+     * (16/16, versus 12/16 unanchored). It is generic - it names no phrase - and is never applied to a first attempt, so
+     * precise questions ("what is question 2?") keep their own wording.
+     */
+    static String anchoredRetry(String question) {
+        return "Describe the contents of the file. Then: " + question;
+    }
+
+    /** Bedrock's own fixed fallback when it cannot produce a usable answer (observed live, intermittently, deep into
+     * a Bedrock session). It is a system string, not model prose, so matching it is exact rather than fragile. */
+    private static final String BEDROCK_CANNED_FAILURE = "sorry, i am unable to assist you with this request";
+
+    /** True when the reply is a refusal: our own no-answer sentence (the one thing we told the model to say) or
+     * Bedrock's fixed failure message. Tolerant of case and curly apostrophes. Used to drop citations that would
+     * otherwise trail a refusal, and to trigger the structural retry. */
     static boolean isNoAnswer(String answer) {
         if (answer == null) {
             return false;
         }
         String normalized = answer.replace('’', '\'').toLowerCase(Locale.ROOT).strip();
-        return normalized.startsWith("i couldn't find anything in your memories");
+        return normalized.startsWith("i couldn't find anything in your memories")
+                || normalized.startsWith(BEDROCK_CANNED_FAILURE);
     }
 }

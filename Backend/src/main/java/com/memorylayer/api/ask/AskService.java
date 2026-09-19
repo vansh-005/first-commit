@@ -61,7 +61,16 @@ import java.util.regex.Pattern;
  *   <li>Otherwise {@code RetrieveAndGenerate} runs with {@link AskPrompt#TEMPLATE}, restricted to
  *       the relevant documents, and only citations from those documents are returned.</li>
  * </ol>
- * Follow-up turns (an existing session) are the one exception to the gate: a follow-up such as
+ * <p><b>Conversational document context:</b> when the find path resolves file(s) it creates/updates
+ * the application {@link AskSession} (even though no Bedrock session exists yet) and stores the
+ * resolved document ids as server-owned context. A later turn in that conversation with no Bedrock
+ * session to lean on runs generation scoped to {@code userId AND documentId IN context} - not globally
+ * gated - so "explain this assignment" reads the file that was just found. Once generation returns a
+ * Bedrock session id it is saved into the same application session (context preserved). Context is
+ * re-checked against the authenticated user's own documents on every turn and can never come from the
+ * client. A new find question always re-resolves globally (through the gate) and replaces the context.
+ *
+ * Follow-up turns (an existing session) are otherwise the one exception to the gate: a follow-up such as
  * "and the stipend?" only makes sense with conversation history, so it scores low standalone.
  * When the gate finds nothing for a follow-up, generation still runs (tenant filter only) and a
  * refusal has its citations dropped.
@@ -129,40 +138,141 @@ public class AskService {
         if (request == null || request.question() == null || request.question().isBlank()) {
             throw new InvalidRequestException("question is required");
         }
+        String question = request.question();
 
         String applicationSessionId = blankToNull(request.sessionId());
-        String bedrockSessionId = null;
+        AskSession existing = null;
         if (applicationSessionId != null) {
-            // Resolution is always scoped to this authenticated user's own partition — a
+            // Resolution is always scoped to this authenticated user's own partition - a
             // sessionId belonging to another user, or already expired/deleted, simply doesn't
             // resolve, indistinguishably (Phase 6 amendment).
-            AskSession existing = askSessionRepository.findByUserAndSessionId(userId, applicationSessionId)
+            existing = askSessionRepository.findByUserAndSessionId(userId, applicationSessionId)
                     .orElseThrow(AskSessionExpiredException::new);
-            bedrockSessionId = existing.getBedrockSessionId();
+        }
+        String bedrockSessionId = existing == null ? null : blankToNull(existing.getBedrockSessionId());
+        List<String> contextDocumentIds = existing == null ? List.of() : liveContextDocuments(userId, existing);
+        boolean findRequest = FindIntent.isFindRequest(question);
+
+        // A conversation whose only progress is a resolved file has no Bedrock context to lean on, so a
+        // deictic follow-up ("explain this assignment") is scoped to that file rather than globally gated.
+        if (!contextDocumentIds.isEmpty() && bedrockSessionId == null && !findRequest) {
+            // State-based rule, not a phrase list: this is the first generation of a context-only conversation, and
+            // live testing showed the file-anchored wording is the reliable formulation for exactly this state
+            // (16/16 vs 12/16 unanchored) - so it is asked FIRST, once, instead of paying a failed attempt before it.
+            return generate(userId, question, applicationSessionId, null,
+                    new LinkedHashSet<>(contextDocumentIds), contextDocumentIds, true, true);
         }
 
         // Preflight: same tenant filter, same relevance gate as /search.
         boolean followUp = bedrockSessionId != null;
         List<RelevantDocument> relevant = RelevantDocument.fromChunks(
-                retriever.retrieveRelevant(RetrievalFilters.forUser(userId), request.question(), NUMBER_OF_RESULTS));
+                retriever.retrieveRelevant(RetrievalFilters.forUser(userId), question, NUMBER_OF_RESULTS));
 
-        if (relevant.isEmpty() && !followUp) {
-            // Nothing relevant to ground an answer in: don't call the model at all.
-            return new AskResponse(AskPrompt.NO_ANSWER, applicationSessionId, List.of());
+        if (relevant.isEmpty()) {
+            if (findRequest || (!followUp && contextDocumentIds.isEmpty())) {
+                // Nothing relevant to ground an answer in (or nothing matching a "do I have ...?"): don't call the model.
+                return new AskResponse(AskPrompt.NO_ANSWER, applicationSessionId, List.of());
+            }
+            if (!contextDocumentIds.isEmpty()) {
+                // A follow-up that doesn't match globally on its own stays on the file(s) this conversation resolved.
+                return generate(userId, question, applicationSessionId, bedrockSessionId,
+                        new LinkedHashSet<>(contextDocumentIds), contextDocumentIds, true, false);
+            }
+            // A follow-up with only Bedrock history behind it: generation with the tenant filter alone.
+            return generate(userId, question, applicationSessionId, bedrockSessionId, null, contextDocumentIds, false, false);
         }
-        if (!relevant.isEmpty() && FindIntent.isFindRequest(request.question())) {
-            return findResponse(userId, applicationSessionId, relevant);
+        if (findRequest) {
+            return findResponse(userId, applicationSessionId, existing, relevant);
         }
+        return generate(userId, question, applicationSessionId, bedrockSessionId, documentIds(relevant), contextDocumentIds, false, false);
+    }
 
-        // Generation sees only the documents that passed the gate (or, for a follow-up that didn't
-        // match on its own, the user's whole corpus - see the class doc).
-        Set<String> allowedDocumentIds = relevant.isEmpty() ? null : documentIds(relevant);
+    /**
+     * Runs {@code RetrieveAndGenerate}. {@code allowedDocumentIds} restricts both retrieval
+     * ({@code userId AND documentId IN ...}) and the citations returned; {@code null} means "tenant filter
+     * only" (a follow-up that matched nothing on its own). {@code contextDocumentIds} is carried into the
+     * saved session unchanged. {@code contextScoped} marks a deictic follow-up ("explain this assignment") whose
+     * documents come from the conversation's own context. {@code anchoredFirst} sends the file-anchored wording as the
+     * FIRST (and only) attempt - used for the first generation of a context-only conversation, so no attempt is spent
+     * on a wording known to be unreliable there. Otherwise see {@link #needsAnchoredRetry}.
+     */
+    private AskResponse generate(String userId, String question, String applicationSessionId, String bedrockSessionId,
+                                 Set<String> allowedDocumentIds, List<String> contextDocumentIds, boolean contextScoped,
+                                 boolean anchoredFirst) {
         RetrievalFilter filter = allowedDocumentIds == null
                 ? RetrievalFilters.forUser(userId)
                 : RetrievalFilters.forUserAndDocuments(userId, allowedDocumentIds);
 
+        RetrieveAndGenerateResponse response = invokeGeneration(userId,
+                anchoredFirst ? AskPrompt.anchoredRetry(question) : question, filter, applicationSessionId, bedrockSessionId);
+        // An anchored-first attempt is already the recovery formulation in a fresh session: retrying it would repeat it.
+        if (!anchoredFirst && needsAnchoredRetry(response, allowedDocumentIds != null, contextScoped)) {
+            // Retried in a FRESH Bedrock session: measured live, a fresh anchored attempt succeeded every time, whereas
+            // failures clustered deep inside long sessions. The retry's session id is the one saved below.
+            log.info("ask_anchored_retry: first generation was a refusal/ungrounded although relevant documents are known; retrying once");
+            response = invokeGeneration(userId, AskPrompt.anchoredRetry(question), filter, applicationSessionId, null);
+        }
+
+        // Saved into the SAME application session, so a conversation that began with a find keeps its id.
+        String resolvedApplicationSessionId =
+                persistSessionMapping(userId, applicationSessionId, response.sessionId(), contextDocumentIds);
+        String answer = response.output().text();
+        boolean refusal = AskPrompt.isNoAnswer(answer);
+        if (refusal) {
+            // Always our deterministic sentence - never Bedrock's canned "Sorry, I am unable to assist ...".
+            answer = AskPrompt.NO_ANSWER;
+        }
+        // A refusal has no sources - whatever was retrieved behind it isn't evidence for anything.
+        List<Citation> citations = refusal
+                ? List.of()
+                : resolveCitations(userId, response, allowedDocumentIds);
+        if (contextScoped && citations.isEmpty() && !refusal) {
+            // Retrieval was restricted to the conversation's resolved file(s), so an answer can only be grounded in
+            // them even when Bedrock returned no reference objects for it (seen live) - cite the files themselves.
+            citations = contextCitations(userId, contextDocumentIds);
+        }
+
+        return new AskResponse(answer, resolvedApplicationSessionId, citations);
+    }
+
+    /** The conversation's context files as source cards (no snippet - the answer wasn't tied to a chunk). */
+    private List<Citation> contextCitations(String userId, List<String> contextDocumentIds) {
+        List<Citation> citations = new ArrayList<>();
+        for (String documentId : contextDocumentIds) {
+            documentRepository.findByUserAndDocumentId(userId, documentId).ifPresent(document ->
+                    citations.add(new Citation("c" + (citations.size() + 1), document.getDocumentId(), document.getFileName(),
+                            document.getMediaCategory(), document.getMimeType(), "", null)));
+        }
+        return citations;
+    }
+
+    /**
+     * One anchored retry, decided from structure only (our own refusal sentinel and the reference count - never the
+     * user's wording). {@code RetrieveAndGenerate}'s internal retrieval is unreliable for short, vague messages
+     * (measured live), so when we already KNOW relevant documents exist ({@code documentsKnown}: they passed the gate
+     * or came from the conversation's context) a failure to use them is worth exactly one more try:
+     * <ul>
+     *   <li>context-scoped (deictic) turn: a refusal, or an answer with no grounding, retries - the user is asking
+     *       about the file itself, so "describe the contents, then ..." is the right reformulation;</li>
+     *   <li>ordinary gated turn: only a refusal that also retrieved <b>nothing</b> retries - that is retrieval
+     *       failing, whereas a refusal that did see references is a legitimate "the file doesn't say", and an
+     *       ungrounded non-refusal (e.g. answered from conversation history) is left as it is.</li>
+     * </ul>
+     */
+    private static boolean needsAnchoredRetry(RetrieveAndGenerateResponse response, boolean documentsKnown, boolean contextScoped) {
+        if (!documentsKnown) {
+            return false;
+        }
+        boolean refused = AskPrompt.isNoAnswer(response.output().text());
+        boolean noReferences = response.citations().stream()
+                .noneMatch(citation -> citation.hasRetrievedReferences() && !citation.retrievedReferences().isEmpty());
+        return contextScoped ? (refused || noReferences) : (refused && noReferences);
+    }
+
+    private RetrieveAndGenerateResponse invokeGeneration(String userId, String question, RetrievalFilter filter,
+                                                         String applicationSessionId, String bedrockSessionId) {
         RetrieveAndGenerateRequest.Builder requestBuilder = RetrieveAndGenerateRequest.builder()
-                .input(RetrieveAndGenerateInput.builder().text(request.question()).build())
+                .input(RetrieveAndGenerateInput.builder().text(question).build())
                 .retrieveAndGenerateConfiguration(RetrieveAndGenerateConfiguration.builder()
                         .type(RetrieveAndGenerateType.KNOWLEDGE_BASE)
                         .knowledgeBaseConfiguration(KnowledgeBaseRetrieveAndGenerateConfiguration.builder()
@@ -185,9 +295,8 @@ public class AskService {
             requestBuilder.sessionId(bedrockSessionId);
         }
 
-        RetrieveAndGenerateResponse response;
         try {
-            response = bedrockAgentRuntimeClient.retrieveAndGenerate(requestBuilder.build());
+            return bedrockAgentRuntimeClient.retrieveAndGenerate(requestBuilder.build());
         } catch (ThrottlingException e) {
             log.warn("Bedrock RetrieveAndGenerate throttled", e);
             throw new RetrievalUnavailableException("The service is temporarily busy. Please retry shortly.", true);
@@ -199,7 +308,7 @@ public class AskService {
                 throw new AskSessionExpiredException();
             }
             // Either there was no session involved, or this ValidationException is unrelated
-            // to session validity (e.g. malformed input) — the session mapping, if any, is
+            // to session validity (e.g. malformed input) - the session mapping, if any, is
             // left untouched. A healthy session must survive an unrelated validation failure.
             log.warn("Bedrock RetrieveAndGenerate rejected the request", e);
             throw new InvalidRequestException("Could not process the question.");
@@ -207,21 +316,14 @@ public class AskService {
             log.error("Bedrock RetrieveAndGenerate failed", e);
             throw new RetrievalUnavailableException("Ask is temporarily unavailable. Please try again.", false);
         }
-
-        String resolvedApplicationSessionId = persistSessionMapping(userId, applicationSessionId, response.sessionId());
-        String answer = response.output().text();
-        // A refusal has no sources - whatever was retrieved behind it isn't evidence for anything.
-        List<Citation> citations = AskPrompt.isNoAnswer(answer)
-                ? List.of()
-                : resolveCitations(userId, response, allowedDocumentIds);
-
-        return new AskResponse(answer, resolvedApplicationSessionId, citations);
     }
 
-    /** Answers "do I have ...?" from real metadata: the relevant documents' filenames. No model call,
-     * so no Bedrock session is created or touched - an existing application session id is returned
-     * unchanged, and a first turn returns none. */
-    private AskResponse findResponse(String userId, String applicationSessionId, List<RelevantDocument> relevant) {
+    /** Answers "do I have ...?" from real metadata: the relevant documents' filenames. No model call, so
+     * no Bedrock session is created or touched - but the resolved files are stored as the conversation's
+     * context in the application session (created here if this is the first turn), so a follow-up like
+     * "explain this assignment" can retrieve from them. */
+    private AskResponse findResponse(String userId, String applicationSessionId, AskSession existing,
+                                     List<RelevantDocument> relevant) {
         List<Citation> citations = new ArrayList<>();
         for (RelevantDocument candidate : relevant) {
             if (citations.size() >= MAX_FOUND_FILES) {
@@ -240,7 +342,24 @@ public class AskService {
                 ? "I found 1 file in your memories that matches: " + names.get(0) + "."
                 : "I found " + citations.size() + " files in your memories that match: "
                         + String.join(", ", names.subList(0, names.size() - 1)) + " and " + names.get(names.size() - 1) + ".";
-        return new AskResponse(answer, applicationSessionId, citations);
+
+        List<String> resolvedIds = citations.stream().map(Citation::documentId).toList();
+        String keptBedrockSessionId = existing == null ? null : blankToNull(existing.getBedrockSessionId());
+        String sessionId = persistSessionMapping(userId, applicationSessionId, keptBedrockSessionId, resolvedIds);
+        return new AskResponse(answer, sessionId, citations);
+    }
+
+    /** The session's context documents that still exist under THIS user's own partition. Anything that
+     * doesn't resolve (deleted, or - defensively - not theirs) is dropped, so a session can never widen
+     * retrieval beyond documents the authenticated user owns. */
+    private List<String> liveContextDocuments(String userId, AskSession session) {
+        List<String> stored = session.getContextDocumentIds();
+        if (stored == null || stored.isEmpty()) {
+            return List.of();
+        }
+        return stored.stream()
+                .filter(id -> documentRepository.findByUserAndDocumentId(userId, id).isPresent())
+                .toList();
     }
 
     private static Set<String> documentIds(List<RelevantDocument> relevant) {
@@ -291,10 +410,12 @@ public class AskService {
         return citations;
     }
 
-    /** Creates the mapping on a first turn, or refreshes its TTL on a continuing one. The
-     * application {@code sessionId} returned to the client never changes for the life of a
-     * conversation — only the DynamoDB row backing it gets touched. */
-    private String persistSessionMapping(String userId, String existingApplicationSessionId, String bedrockSessionId) {
+    /** Creates the mapping on a first turn, or updates it on a continuing one. The application
+     * {@code sessionId} returned to the client never changes for the life of a conversation - only the
+     * DynamoDB row backing it gets touched. {@code bedrockSessionId} may be null (a conversation that has
+     * only resolved a file so far); {@code contextDocumentIds} is the server-owned document context. */
+    private String persistSessionMapping(String userId, String existingApplicationSessionId, String bedrockSessionId,
+                                         List<String> contextDocumentIds) {
         String applicationSessionId = existingApplicationSessionId != null
                 ? existingApplicationSessionId
                 : UUID.randomUUID().toString();
@@ -305,6 +426,7 @@ public class AskService {
         session.setApplicationSessionId(applicationSessionId);
         session.setUserId(userId);
         session.setBedrockSessionId(bedrockSessionId);
+        session.setContextDocumentIds(contextDocumentIds == null || contextDocumentIds.isEmpty() ? null : List.copyOf(contextDocumentIds));
         session.setUpdatedAt(Instant.now().toString());
         session.setExpiresAt(Instant.now().plus(SESSION_MAPPING_TTL).getEpochSecond());
         askSessionRepository.save(session);

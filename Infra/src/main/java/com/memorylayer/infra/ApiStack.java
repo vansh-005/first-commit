@@ -80,7 +80,11 @@ public class ApiStack extends Stack {
                 .handler("com.memorylayer.api.LambdaHandler::handleRequest")
                 .code(Code.fromAsset("../Backend/target/backend.jar"))
                 .memorySize(1024)
-                .timeout(Duration.seconds(10))
+                // Ask can make two Bedrock round-trips (preflight Retrieve + generation, plus one recovery retry),
+                // measured at ~9-15s for a retrying turn - a 10s ceiling timed those out. 28s leaves the Lambda
+                // terminating just BEFORE the 30s HTTP API integration ceiling below, so the gateway never has to
+                // cut the connection first.
+                .timeout(Duration.seconds(28))
                 .logGroup(logGroup)
                 .environment(java.util.Map.of(
                         "TABLE_NAME", dataStack.getTable().getTableName(),
@@ -150,6 +154,8 @@ public class ApiStack extends Stack {
                 .integrationType("AWS_PROXY")
                 .integrationUri(liveAlias.getFunctionArn())
                 .payloadFormatVersion("2.0")
+                // Explicit (it is also the HTTP API maximum): the function timeout above must stay below this.
+                .timeoutInMillis(30_000)
                 .build();
 
         CfnRoute.Builder.create(this, "HealthRoute")

@@ -21,6 +21,7 @@ class AskPromptTest {
                 .contains("personal details")
                 .contains("Answer ONLY from the search results")
                 .contains("do not give general advice")
+                .contains("Requests to explain, summarize, describe or walk through a file")
                 .contains(AskPrompt.NO_ANSWER);
     }
 
@@ -29,7 +30,15 @@ class AskPromptTest {
         assertThat(AskPrompt.isNoAnswer(AskPrompt.NO_ANSWER)).isTrue();
         assertThat(AskPrompt.isNoAnswer("  I couldn’t find anything in your memories that answers that. ")).isTrue();
         assertThat(AskPrompt.isNoAnswer("I COULDN'T FIND ANYTHING IN YOUR MEMORIES THAT ANSWERS THAT.")).isTrue();
+        assertThat(AskPrompt.isNoAnswer("Sorry, I am unable to assist you with this request.")).isTrue();
         assertThat(AskPrompt.isNoAnswer("You had $200 in AWS credits.")).isFalse();
         assertThat(AskPrompt.isNoAnswer(null)).isFalse();
+    }
+
+    @Test
+    void theAnchoredRetryIsGenericAndKeepsTheUsersQuestionVerbatim() {
+        assertThat(AskPrompt.anchoredRetry("explain this assignment"))
+                .isEqualTo("Describe the contents of the file. Then: explain this assignment");
+        assertThat(AskPrompt.anchoredRetry("what is question 2?")).endsWith("what is question 2?");
     }
 }

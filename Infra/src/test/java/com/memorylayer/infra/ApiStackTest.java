@@ -34,6 +34,10 @@ class ApiStackTest {
                 "SnapStart", Map.of("ApplyOn", "PublishedVersions")
         ));
 
+        // Timeout invariant: the Lambda (28s) must terminate before the HTTP API integration ceiling (30s).
+        template.hasResourceProperties("AWS::Lambda::Function", Match.objectLike(Map.of("Timeout", 28)));
+        template.hasResourceProperties("AWS::ApiGatewayV2::Integration", Match.objectLike(Map.of("TimeoutInMillis", 30000)));
+
         template.hasResourceProperties("AWS::ApiGatewayV2::Route", Map.of(
                 "RouteKey", "GET /api/v1/health"
         ));
