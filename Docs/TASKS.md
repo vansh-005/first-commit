@@ -951,6 +951,14 @@ awaiting a real-Cognito-login review of Home/Library/Search/Ask with actual data
 - [ ] Real-browser review with real data (Home, Library, Search, Ask), both themes, fresh + incognito, mobile widths
 - [ ] Final polish pass from that review
 
+### Engineering showcase (`/engineering`) — implemented locally, **not committed**
+
+- [x] Canonical SVGs generated into `Docs/diagrams/` (high-level, upload/ingestion, search/ask) via `generate.py`
+- [x] Public `/engineering` route + landing nav/footer link; 11 sections, inline theme-adaptive diagrams, CTAs
+- [x] `EngineeringPage.test.tsx` (route content, CTAs, Landing link, no-identifier scan); tsc, vitest, build pass
+- [x] `ARCHITECTURE.md` §2/§3/§4/§8 refreshed to deployed behavior; `DOC#` sort-key prefix corrected in KT
+- [ ] Commit/push + Amplify verification of `/engineering` (awaiting user request)
+
 ## Phase 8 notes
 
 - UI primitives are hand-written Tailwind (Skeleton/Badge/EmptyState/ErrorState/dialog/menu) —

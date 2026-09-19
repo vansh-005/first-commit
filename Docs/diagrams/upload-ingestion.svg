@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 980" width="1480" height="980" role="img" aria-labelledby="upl-title upl-desc" font-family="Inter, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<title id="upl-title">Recollect upload and ingestion pipeline</title>
+<desc id="upl-desc">A sequence from the browser requesting presigned URLs, uploading directly to S3, the S3 event buffered by SQS, the Ingestion Coordinator staging files into kb/multimodal or kb/text with metadata sidecars and starting a Bedrock Knowledge Base ingestion job, and the EventBridge-driven Status Reconciler moving documents to READY or FAILED. Failure paths: one-job-at-a-time backpressure, the dead-letter queue, and stale-document cleanup.</desc>
+<defs><marker id="upl-arrow-primary" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9 z" style="fill:var(--accent,#4f5fff)"/></marker><marker id="upl-arrow-secondary" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9 z" style="fill:var(--text-muted,#8e8f96)"/></marker><marker id="upl-arrow-dashed" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9 z" style="fill:var(--text-muted,#8e8f96)"/></marker><marker id="upl-arrow-fail" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9 z" style="fill:var(--error,#f87171)"/></marker></defs>
+<rect width="1480" height="980" rx="16" style="fill:var(--background,#17181b)"/>
+<rect x="40.0" y="24" width="130" height="56" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="52.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Browser</text>
+<text x="52.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">React SPA</text>
+<line x1="105" y1="80" x2="105" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<rect x="210.0" y="24" width="150" height="56" rx="10" style="fill:var(--accent-subtle,rgba(91,108,255,.16));stroke:var(--accent,#4f5fff);stroke-width:1.25"/>
+<text x="222.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">API Lambda</text>
+<text x="222.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">Java · SnapStart</text>
+<line x1="285" y1="80" x2="285" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<rect x="400.0" y="24" width="130" height="56" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="412.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">DynamoDB</text>
+<text x="412.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">document state</text>
+<line x1="465" y1="80" x2="465" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<rect x="580.0" y="24" width="130" height="56" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="592.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">S3 bucket</text>
+<text x="592.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">users/ · kb/</text>
+<line x1="645" y1="80" x2="645" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<rect x="750.0" y="24" width="150" height="56" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="762.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">SQS queue</text>
+<text x="762.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">+ dead-letter queue</text>
+<line x1="825" y1="80" x2="825" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<rect x="945.0" y="24" width="130" height="56" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="957.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Coordinator</text>
+<text x="957.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">Lambda</text>
+<line x1="1010" y1="80" x2="1010" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<rect x="1130.0" y="24" width="130" height="56" rx="10" style="fill:var(--accent-subtle,rgba(91,108,255,.16));stroke:var(--accent,#4f5fff);stroke-width:1.25"/>
+<text x="1142.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Bedrock KB</text>
+<text x="1142.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">ingestion job</text>
+<line x1="1195" y1="80" x2="1195" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<rect x="1295.0" y="24" width="160" height="56" rx="10" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="1307.0" y="44" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Status Reconciler</text>
+<text x="1307.0" y="59" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">Lambda · every 1 min</text>
+<line x1="1375" y1="80" x2="1375" y2="800" style="stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 5"/>
+<path d="M118,122 L279,122" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-primary)"/>
+<rect x="126.0" y="99" width="150.0" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="201.0" y="110.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">POST /uploads (file list)</text>
+<circle cx="105" cy="122" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="105" y="126" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">1</text>
+<path d="M298,170 L459,170" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="306.0" y="147" width="150.0" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="381.0" y="158.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">Document = UPLOAD_PENDING</text>
+<circle cx="285" cy="170" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="285" y="174" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">2</text>
+<path d="M272,218 L111,218" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-dasharray:5 4;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-dashed)"/>
+<rect x="133.6" y="195" width="110.8" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="189.0" y="206.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">presigned PUT URLs</text>
+<circle cx="285" cy="218" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="285" y="222" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">3</text>
+<path d="M118,266 L639,266" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-primary)"/>
+<rect x="258.4" y="243" width="245.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="381.0" y="254.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">PUT bytes directly — never through the API</text>
+<circle cx="105" cy="266" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="105" y="270" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">4</text>
+<path d="M658,314 L819,314" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="640.8" y="291" width="200.4" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="741.0" y="302.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">ObjectCreated · users/ prefix only</text>
+<circle cx="645" cy="314" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="645" y="318" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">5</text>
+<path d="M838,362 L1004,362" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="879.3" y="339" width="88.4" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="923.5" y="350.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">buffered batch</text>
+<circle cx="825" cy="362" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="825" y="366" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">6</text>
+<path d="M997,410 L471,410" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="687.4" y="387" width="105.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="740.0" y="398.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">status = UPLOADED</text>
+<circle cx="1010" cy="410" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="1010" y="414" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">7</text>
+<path d="M997,458 L651,458" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-primary)"/>
+<rect x="727.0" y="435" width="206.0" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="830.0" y="446.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">stage copy + .metadata.json sidecar</text>
+<circle cx="1010" cy="458" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="1010" y="462" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">8</text>
+<path d="M997,506 L471,506" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="637.0" y="483" width="206.0" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="740.0" y="494.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">status = INDEXING · save job record</text>
+<circle cx="1010" cy="506" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="1010" y="510" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">9</text>
+<path d="M1023,554 L1189,554" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-primary)"/>
+<rect x="1055.9" y="531" width="105.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="1108.5" y="542.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">StartIngestionJob</text>
+<circle cx="1010" cy="554" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="1010" y="558" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">10</text>
+<rect x="140" y="590" width="460" height="62" rx="10" style="fill:var(--surface,#1c1d21);stroke:var(--border,#2c2d33);stroke-width:1.25"/>
+<text x="152" y="610" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-secondary,#a3a3a8)">Routed by file type into two staging prefixes</text>
+<text x="152" y="625" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-muted,#8e8f96)">kb/multimodal/ → Data Automation parser (PDF, image, audio, video)</text>
+<text x="152" y="640" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-muted,#8e8f96)">kb/text/ → default text parser</text>
+<rect x="650" y="596" width="330" height="104" rx="12" style="fill:none;stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 4"/>
+<text x="664" y="614" text-anchor="start" font-size="9.5" font-weight="600" letter-spacing="1" style="fill:var(--text-muted,#8e8f96)">ONE INGESTION JOB PER KNOWLEDGE BASE</text>
+<text x="664" y="634" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">ConflictException → documents stay UPLOADED and</text>
+<text x="664" y="649" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">the SQS message retries later. Backpressure,</text>
+<text x="664" y="664" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">not failure — a healthy upload never hits the DLQ.</text>
+<rect x="1100" y="596" width="250" height="82" rx="10" style="fill:var(--accent-subtle,rgba(91,108,255,.16));stroke:var(--accent,#4f5fff);stroke-width:1.25"/>
+<text x="1112" y="616" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Index</text>
+<text x="1112" y="631" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">parse → chunk → Titan Text</text>
+<text x="1112" y="646" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">Embeddings V2 → S3 Vectors</text>
+<text x="1112" y="661" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">with userId / documentId metadata</text>
+<path d="M1195,560 L1195,596" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-primary)"/>
+<path d="M1010,566 L1010,648 L984,648" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-dasharray:5 4;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-dashed)"/>
+<rect x="931.4" y="595" width="161.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="1012.0" y="606.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">if a job is already running</text>
+<path d="M1362,740 L1201,740" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="1212.4" y="717" width="133.2" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="1279.0" y="728.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">GetIngestionJob (poll)</text>
+<circle cx="1375" cy="740" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="1375" y="744" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">11</text>
+<path d="M1362,786 L471,786" fill="none" style="stroke:var(--accent,#4f5fff);stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-primary)"/>
+<rect x="814.2" y="763" width="211.6" height="16" rx="8" style="fill:var(--background,#17181b);stroke:var(--border,#2c2d33);stroke-width:1"/>
+<text x="920.0" y="774.5" text-anchor="middle" font-size="10" font-weight="500" style="fill:var(--text-secondary,#a3a3a8)">READY · or FAILED with a safe reason</text>
+<circle cx="1375" cy="786" r="10" style="fill:var(--accent,#4f5fff)"/>
+<text x="1375" y="790" text-anchor="middle" font-size="11" font-weight="700" style="fill:#fff">12</text>
+<rect x="24" y="826" width="1432" height="138" rx="14" style="fill:none;stroke:var(--border-strong,#3a3b42);stroke-width:1;stroke-dasharray:3 4"/>
+<text x="38" y="846" text-anchor="start" font-size="9.5" font-weight="600" letter-spacing="1" style="fill:var(--text-muted,#8e8f96)">DOCUMENT STATE AND SAFETY NETS</text>
+<rect x="48" y="858" width="129.60000000000002" height="30" rx="15" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="112.80000000000001" y="877" text-anchor="middle" font-size="10.5" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">UPLOAD_PENDING</text>
+<path d="M180.60000000000002,873 L194.60000000000002,873" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="197.60000000000002" y="858" width="85.2" height="30" rx="15" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="240.20000000000002" y="877" text-anchor="middle" font-size="10.5" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">UPLOADED</text>
+<path d="M285.8,873 L299.8,873" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="302.8" y="858" width="85.2" height="30" rx="15" style="fill:var(--surface-raised,#232428);stroke:var(--border-strong,#3a3b42);stroke-width:1.25"/>
+<text x="345.40000000000003" y="877" text-anchor="middle" font-size="10.5" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">INDEXING</text>
+<path d="M391.0,873 L405.0,873" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="408.0" y="858" width="63.0" height="30" rx="15" style="fill:var(--accent-subtle,rgba(91,108,255,.16));stroke:var(--accent,#4f5fff);stroke-width:1.25"/>
+<text x="439.5" y="877" text-anchor="middle" font-size="10.5" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">READY</text>
+<path d="M474.0,873 L488.0,873" fill="none" style="stroke:var(--text-muted,#8e8f96);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round" marker-end="url(#upl-arrow-secondary)"/>
+<rect x="491.0" y="858" width="70.4" height="30" rx="15" style="fill:color-mix(in srgb, var(--error,#f87171) 10%, transparent);stroke:var(--error,#f87171);stroke-width:1.25;stroke-dasharray:5 4"/>
+<text x="526.2" y="877" text-anchor="middle" font-size="10.5" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">FAILED</text>
+<text x="48" y="912" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">Stale-document cleanup (every 15 min): UPLOAD_PENDING &gt; 30 min with no object → FAILED;</text>
+<text x="48" y="927" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">UPLOADED &gt; 2 h and not covered by an active job → FAILED; INDEXING &gt; 1 h → warning only.</text>
+<rect x="880" y="852" width="290" height="92" rx="10" style="fill:color-mix(in srgb, var(--error,#f87171) 10%, transparent);stroke:var(--error,#f87171);stroke-width:1.25;stroke-dasharray:5 4"/>
+<text x="892" y="872" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">FAILURE PATH</text>
+<text x="892" y="887" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Dead-letter queue</text>
+<text x="892" y="902" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">messages that exhaust their retries</text>
+<text x="892" y="917" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">→ CloudWatch alarm → SNS email</text>
+<rect x="1190" y="852" width="244" height="92" rx="10" style="fill:color-mix(in srgb, var(--error,#f87171) 10%, transparent);stroke:var(--error,#f87171);stroke-width:1.25;stroke-dasharray:5 4"/>
+<text x="1202" y="872" text-anchor="start" font-size="9" font-weight="600" letter-spacing="0.8" style="fill:var(--text-muted,#8e8f96)">FAILURE PATH</text>
+<text x="1202" y="887" text-anchor="start" font-size="13" font-weight="600" style="fill:var(--text-primary,#f2f2f0)">Alarms</text>
+<text x="1202" y="902" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">reconciler not running · queue age</text>
+<text x="1202" y="917" text-anchor="start" font-size="10.5" font-weight="400" style="fill:var(--text-secondary,#a3a3a8)">Lambda errors · DLQ occupancy</text>
+</svg>

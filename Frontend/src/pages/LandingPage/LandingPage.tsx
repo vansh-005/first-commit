@@ -1,5 +1,6 @@
-import { Wordmark } from '@/components/brand/Logo'
 import { AppWindowPreview } from '@/components/brand/ProductPreview'
+import { PublicFooter } from '@/components/marketing/PublicFooter'
+import { PublicHeader } from '@/components/marketing/PublicHeader'
 import { ArrowRight, Lock, MessageSquare, Search, Upload } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -29,35 +30,7 @@ const secondaryCta =
 export function LandingPage() {
   return (
     <div className="min-h-screen bg-background text-text-primary">
-      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur">
-        <nav aria-label="Primary" className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <Link to="/" aria-label="Recollect home">
-            <Wordmark />
-          </Link>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <a
-              href="#how-it-works"
-              className="hidden rounded-[var(--radius-md)] px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary sm:inline"
-            >
-              How it works
-            </a>
-            <Link
-              to="/login"
-              className="rounded-[var(--radius-md)] px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
-            >
-              Sign in
-            </Link>
-            <Link
-              to="/login"
-              aria-label="Start remembering"
-              className="inline-flex h-9 items-center rounded-[var(--radius-md)] bg-accent px-4 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
-            >
-              <span className="sm:hidden">Get started</span>
-              <span className="hidden sm:inline">Start remembering</span>
-            </Link>
-          </div>
-        </nav>
-      </header>
+      <PublicHeader current="landing" />
 
       <main>
         <section className="relative overflow-hidden">
@@ -143,12 +116,7 @@ export function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-5 py-8 text-sm text-text-muted sm:flex-row sm:items-center">
-          <Wordmark />
-          <p>Your digital life, remembered.</p>
-        </div>
-      </footer>
+      <PublicFooter />
 
     </div>
   )

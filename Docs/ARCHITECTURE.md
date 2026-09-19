@@ -18,6 +18,16 @@ Primary AWS Region: **`ap-south-1` (Mumbai)**.
 
 ## 2. Architecture diagrams
 
+**Canonical diagrams** are the SVGs in `Docs/diagrams/` (deployed system; shown publicly on the `/engineering`
+page). Regenerate with `python Docs/diagrams/generate.py`; do not hand-edit the SVGs.
+
+- `Docs/diagrams/high-level-architecture.svg`
+- `Docs/diagrams/upload-ingestion.svg`
+- `Docs/diagrams/search-ask.svg`
+
+The Lucid links below are the original design-time drafts, kept as **historical references only** — they predate the
+relevance gate, Ask preflight, conversation context, recovery retry and stale cleanup.
+
 ### High-level AWS architecture
 
 Lucid view:
@@ -87,16 +97,15 @@ Bedrock Knowledge Base ingestion
    v
 Amazon S3 Vectors
 
-Status reconciliation:
+Status reconciliation (EventBridge):
 
-EventBridge scheduled rule
-   |
-   v
-Status Reconciler Lambda
-   |
-   +--> GetIngestionJob
-   +--> DynamoDB status updates
+rate(1 minute)   -> Status Reconciler Lambda -> GetIngestionJob -> DynamoDB status updates
+rate(15 minutes) -> Stale Cleanup Lambda     -> fails documents stuck in UPLOAD_PENDING / INDEXING past policy
 ```
+
+Search and Ask run behind the relevance gate and Ask conversation context described in §8; timeouts are 28s (Lambda)
+and 30s (HTTP API integration). Eight CloudWatch alarms notify an SNS email topic; failed messages land in a DLQ.
+The full, current picture is the canonical SVGs in `Docs/diagrams/` (§2).
 
 CloudWatch is used for Lambda logs, API/ingestion diagnostics, and basic operational visibility.
 
@@ -116,7 +125,7 @@ CloudWatch is used for Lambda logs, API/ingestion diagnostics, and basic operati
 | Multimodal understanding | Bedrock Knowledge Bases + Bedrock Data Automation parser | Managed parsing of PDFs/images/audio/video into searchable representations. |
 | Embeddings | Titan Text Embeddings V2 initially | Unified text-semantic retrieval after BDA conversion. |
 | Vector store | Amazon S3 Vectors | Serverless vector storage; avoids an always-running vector database. |
-| Answer generation | Bedrock model, configurable | Used only by `/ask`; default should be a cost-efficient model available from Mumbai/APAC. |
+| Answer generation | Amazon Nova Lite (APAC inference profile) | Used only by `/ask`, after the preflight relevance gate; cost-efficient and available from Mumbai. |
 | Monitoring | Amazon CloudWatch | Logs and basic metrics. |
 | Ingestion status | EventBridge + small status Lambda | Avoid waiting/polling inside the ingestion Lambda. |
 | Infrastructure | AWS CDK | All project infrastructure is defined as code. |
@@ -360,46 +369,37 @@ The product exposes two logically different capabilities because they have diffe
 
 ### 8.1 Semantic search — `/search`
 
-Use Bedrock Knowledge Base `Retrieve`.
+Bedrock Knowledge Base `Retrieve`, no generation model.
 
-```text
-POST /search
-```
-
-Flow:
-
-1. API Gateway validates Cognito JWT.
-2. Lambda extracts `sub` as `userId`.
-3. Lambda constructs metadata filter: `userId == authenticatedSub`.
-4. Lambda calls `Retrieve`.
-5. Knowledge Base performs vector search in S3 Vectors.
-6. Backend returns ranked files/chunks and source metadata.
-
-No generation model is invoked.
-
-This is the default path for requests such as:
-
-> "Find the screenshot where I saved the AWS credits information."
+1. API Gateway validates the Cognito JWT; Lambda takes `sub` as `userId`.
+2. Lambda builds the metadata filter `userId == sub` (plus optional media type) and calls `Retrieve` with oversampling.
+3. **Relevance gate:** chunks scoring below `0.62` similarity are dropped, per chunk, before document de-duplication.
+   The threshold is corpus-calibrated (~75 labelled queries on the current test corpus) and tunable, not a universal
+   constant. Scores drive the decision only; they are never returned to the browser or logged.
+4. Surviving chunks are de-duplicated by document and resolved in DynamoDB under the caller's partition.
+5. Nothing relevant returns `results: []` rather than arbitrary nearest neighbours.
 
 ### 8.2 Ask your memory — `/ask`
 
-Use Bedrock Knowledge Base `RetrieveAndGenerate`.
+Bedrock `RetrieveAndGenerate` (Amazon Nova Lite via the APAC inference profile), wrapped by server-owned logic:
 
-```text
-POST /ask
-```
+1. Resolve the `AskSession` under the caller's partition (foreign or expired id -> 409, indistinguishable).
+2. **Context-only turn?** (`contextDocumentIds` non-empty, no Bedrock session yet, not a file-lookup question) ->
+   generate directly, scoped to those files, with wording anchored to the file, asked once.
+3. Otherwise **preflight `Retrieve`** with the same tenant filter and the same 0.62 gate as `/search`.
+4. Nothing relevant -> **deterministic no-answer** (no model call, no citations, Bedrock session id null).
+5. **File-lookup intent** ("do I have ...", "find my ...") -> answered from DynamoDB metadata (the model never sees
+   filenames); writes `AskSession.contextDocumentIds`.
+6. Else `RetrieveAndGenerate`, scoped to `userId AND documentId IN (relevant | context)`, with a grounded prompt.
+7. Refusal / no grounding -> **one bounded recovery retry** (fresh Bedrock session, file-anchored wording); never on a
+   context-only conversation's first call.
+8. The Bedrock `sessionId` of the *successful* attempt is persisted into the same `AskSession` (nullable);
+   `contextDocumentIds` is written only by the backend and re-verified against the caller's own documents every turn.
+9. Citations come only from gate-passing or context documents; refusals carry no sources; when Bedrock returns no
+   reference objects the source file is cited without an invented snippet or timestamp.
 
-Flow:
-
-1. same Cognito-derived tenant filter as `/search`;
-2. retrieve user-owned grounding chunks;
-3. invoke the configured Bedrock generation model;
-4. return answer + citations;
-5. reuse the Bedrock-generated `sessionId` for follow-up turns in the same conversation.
-
-Do not assume a fixed session lifetime in application logic. If a session is no longer accepted, begin a new conversation.
-
-Generation is deliberately separate from semantic search so ordinary file retrieval does not incur unnecessary LLM token cost.
+`AskSession` expires after 24h (`expiresAt` TTL). Lambda timeout is 28s; the HTTP API integration timeout is 30s.
+Generation stays separate from search so ordinary retrieval incurs no LLM token cost.
 
 ---
 

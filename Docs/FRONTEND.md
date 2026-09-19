@@ -157,6 +157,9 @@ Recommended routes:
 /login
     Authentication entry point
 
+/engineering
+    Public engineering showcase (no auth)
+
 /app
     Main authenticated workspace
 

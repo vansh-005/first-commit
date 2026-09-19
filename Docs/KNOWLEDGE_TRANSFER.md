@@ -242,7 +242,7 @@ Full detail: `Docs/ARCHITECTURE.md` §7, `Docs/OPERATIONS.md` §8.
 
 Single DynamoDB table (`MemoryLayer`). Key entities:
 
-- **Document** — `PK=USER#<sub>`, `SK=DOCUMENT#<documentId>`. Statuses:
+- **Document** — `PK=USER#<sub>`, `SK=DOC#<documentId>`. Statuses:
   `UPLOAD_PENDING -> UPLOADED -> INDEXING -> READY | FAILED`. Never add a
   new status casually (`AGENTS.md`).
 - **IngestionJob** — `PK=SYSTEM#INGESTION`, `SK=JOB#<jobId>`. Tracks a
@@ -385,6 +385,21 @@ Things to know when touching the frontend:
   or punctuation normalisation — both were measured to not help. A fully deterministic alternative would be our own
   scoped `Retrieve` + a direct model call (an architecture change: `/ask` is specified as `RetrieveAndGenerate`).
 - **Deferred:** the `/app/document/:id` detail page (still a stub). Demo data: `Docs/demo-samples/`.
+
+---
+
+## Engineering showcase (`/engineering`)
+
+Public, unauthenticated route (outside `ProtectedRoute`) explaining the deployed architecture; linked from the
+landing header/footer ("Engineering"). Frontend-only — no backend/infra/API change. Copy lives in
+`Frontend/src/pages/EngineeringPage/content.ts`; components in `Frontend/src/components/engineering/`.
+
+- The three diagrams are **generated**: `python Docs/diagrams/generate.py` (uses `diagramkit.py`) writes
+  `Docs/diagrams/*.svg`. The page inlines them via Vite `?raw` (theme-adaptive CSS variables); `vite.config.ts` sets
+  `server.fs.allow: ['..']` so dev can read `../Docs`. Change the diagrams by editing `generate.py`, not the SVGs.
+- Must never show account IDs, bucket names, ARNs, Cognito IDs, emails, real user/document IDs — enforced by a scan in
+  `EngineeringPage.test.tsx`. The 0.62 threshold is described as corpus-calibrated and tunable.
+- When Ask/Search/ingestion behavior changes, update `generate.py` + `content.ts` + `ARCHITECTURE.md` together.
 
 ---
 

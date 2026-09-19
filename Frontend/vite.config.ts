@@ -11,6 +11,10 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
   },
+  server: {
+    // The /engineering page inlines the canonical diagrams that live in ../Docs/diagrams.
+    fs: { allow: ['..'] },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

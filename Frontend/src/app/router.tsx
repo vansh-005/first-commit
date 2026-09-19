@@ -1,12 +1,13 @@
 import { LandingPage } from '@/pages/LandingPage'
 import { createBrowserRouter } from 'react-router-dom'
 
-// Routes per Docs/FRONTEND.md Section 5. "/" and "/login" stand alone; every /app/* route is
-// nested under the single persistent AppShell layout (Section 6 — sidebar + top bar), wrapped
-// once in ProtectedRoute rather than per-page. The authenticated app is code-split so the public
-// landing page (the first thing a visitor loads) doesn't pay for it.
+// Routes per Docs/FRONTEND.md Section 5. "/", "/login" and "/engineering" (the public engineering showcase) stand
+// alone and need no authentication; every /app/* route is nested under the single persistent AppShell layout
+// (Section 6 - sidebar + top bar), wrapped once in ProtectedRoute rather than per-page. Everything except the
+// landing page is code-split, so a first-time visitor only downloads what they open.
 export const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
+  { path: '/engineering', lazy: async () => ({ Component: (await import('@/pages/EngineeringPage')).EngineeringPage }) },
   { path: '/login', lazy: async () => ({ Component: (await import('@/pages/LoginPage')).LoginPage }) },
   {
     path: '/app',
