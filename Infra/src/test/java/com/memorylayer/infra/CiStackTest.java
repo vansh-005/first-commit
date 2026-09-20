@@ -15,7 +15,7 @@ class CiStackTest {
     private static Template synth() {
         App app = new App();
         Environment env = Environment.builder().account("123456789012").region("ap-south-1").build();
-        CiStack stack = new CiStack(app, "TestCiStack", StackProps.builder().env(env).build(), "octo/repo");
+        CiStack stack = new CiStack(app, "TestCiStack", StackProps.builder().env(env).build(), "octo@1/repo@2");
         return Template.fromStack(stack);
     }
 
@@ -31,8 +31,8 @@ class CiStackTest {
         Map<String, Object> condition = Map.of("StringEquals", Map.of(
                 "token.actions.githubusercontent.com:aud", "sts.amazonaws.com",
                 "token.actions.githubusercontent.com:sub", List.of(
-                        "repo:octo/repo:environment:production",
-                        "repo:octo/repo:ref:refs/heads/main")));
+                        "repo:octo@1/repo@2:environment:production",
+                        "repo:octo@1/repo@2:ref:refs/heads/main")));
         Map<String, Object> statement = Map.of(
                 "Action", "sts:AssumeRoleWithWebIdentity",
                 "Condition", condition);

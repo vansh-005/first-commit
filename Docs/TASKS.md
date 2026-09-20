@@ -94,5 +94,5 @@ small, correct and low-cost.
 - [x] Cost story: on-demand / serverless, no always-on infrastructure (see `ARCHITECTURE.md` §15)
 - [x] README
 - [x] Demo video link (in the README)
-- [x] CI/CD: `ci.yml`, `deploy-infra.yml` and `MemoryLayerCiStack` (deployed); GitHub variables/secret and `production` environment configured (`OPERATIONS.md` §4.1). `deploy-infra.yml` first run still pending.
+- [x] CI/CD: `ci.yml`, `deploy-infra.yml` and `MemoryLayerCiStack` (deployed); GitHub variables/secret and `production` environment configured (`OPERATIONS.md` §4.1). First `deploy-infra.yml` run failed OIDC auth because GitHub uses immutable `sub` claims for this repo; trust fixed to `owner@id/repo@id` form and redeployed. Re-run pending.
 - [ ] Final cleanup of coding-agent files (`AGENTS.md`, `CLAUDE.md`, `Docs/KNOWLEDGE_TRANSFER.md`, `Docs/AWS.md`) after CI/CD

@@ -129,11 +129,17 @@ again, deploys, then `GET /api/v1/health` must return 200). `MemoryLayerCiStack`
 deploy it locally with `deploy.ps1`.
 
 AWS auth is GitHub OIDC -> `sts:AssumeRoleWithWebIdentity` into role `memory-layer-github-deploy` (defined in
-`MemoryLayerCiStack`). Trust is limited to `repo:vansh-005/first-commit` with subject `environment:production` or
-`ref:refs/heads/main`, audience `sts.amazonaws.com`. The role can only assume the CDK bootstrap deploy /
+`MemoryLayerCiStack`). Trust is limited to `repo:vansh-005@137313429/first-commit@1374979145` (immutable owner/repo-ID subject form) with subject
+`environment:production` or `ref:refs/heads/main`, audience `sts.amazonaws.com`. The role can only assume the CDK bootstrap deploy /
 file-publishing roles and `cloudformation:DescribeStacks` on `MemoryLayerApiStack`. Note the bootstrap
 `cfn-exec-role` is `AdministratorAccess`, so anyone who can approve `production` can effectively deploy anything via
 CloudFormation - protect that environment accordingly.
+
+**Why the subject contains numeric IDs:** GitHub repositories created after 2026-07-15 emit immutable OIDC subjects
+(`repo:<owner>@<ownerId>/<repo>@<repoId>:...`) instead of `repo:<owner>/<repo>:...`. A trust policy written with the
+plain name never matches (`Not authorized to perform sts:AssumeRoleWithWebIdentity` - the first `deploy-infra.yml`
+run hit exactly this). The IDs also mean a renamed or deleted-and-recreated repo cannot inherit the trust. If the repo
+is ever transferred/recreated, update `InfraApp.GITHUB_OIDC_REPO` and redeploy `MemoryLayerCiStack` locally.
 
 One-time setup: deploy `MemoryLayerCiStack` locally, then set GitHub variable `AWS_DEPLOY_ROLE_ARN` (the stack's
 `GithubDeployRoleArn` output), variable `GOOGLE_OAUTH_CLIENT_ID`, secret `ALARM_EMAIL`, and configure the

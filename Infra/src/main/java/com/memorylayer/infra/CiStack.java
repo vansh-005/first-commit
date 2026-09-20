@@ -36,7 +36,15 @@ public class CiStack extends Stack {
     // Default CDK bootstrap qualifier (matches the deployed CDKToolkit stack).
     private static final String BOOTSTRAP_QUALIFIER = "hnb659fds";
 
-    public CiStack(final Construct scope, final String id, final StackProps props, final String githubRepo) {
+    /**
+     * @param githubOidcRepo the repository as it appears in the OIDC {@code sub} claim. Repositories
+     *     created after 2026-07-15 (including this one) get IMMUTABLE subjects that embed the numeric
+     *     owner and repo IDs: {@code owner@ownerId/repo@repoId} - not the plain {@code owner/repo}.
+     *     A plain-name trust policy never matches and fails with "Not authorized to perform
+     *     sts:AssumeRoleWithWebIdentity". IDs also stop a deleted-and-recreated (or renamed) repo
+     *     from inheriting this trust.
+     */
+    public CiStack(final Construct scope, final String id, final StackProps props, final String githubOidcRepo) {
         super(scope, id, props);
 
         CfnOIDCProvider provider = CfnOIDCProvider.Builder.create(this, "GithubOidcProvider")
@@ -52,8 +60,8 @@ public class CiStack extends Stack {
                         "StringEquals", Map.<String, Object>of(
                                 OIDC_HOST + ":aud", "sts.amazonaws.com",
                                 OIDC_HOST + ":sub", List.of(
-                                        "repo:" + githubRepo + ":environment:production",
-                                        "repo:" + githubRepo + ":ref:refs/heads/main"))),
+                                        "repo:" + githubOidcRepo + ":environment:production",
+                                        "repo:" + githubOidcRepo + ":ref:refs/heads/main"))),
                         "sts:AssumeRoleWithWebIdentity"))
                 .build();
 

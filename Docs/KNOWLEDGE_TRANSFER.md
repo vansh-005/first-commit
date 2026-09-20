@@ -157,6 +157,10 @@ typed confirmation (`deploy`), then deploys with `--exclusively`.
   **Configured:** the three GitHub variables/secret exist, and the `production` environment has a required reviewer
   (self-review allowed) and is restricted to `main`. `deploy-infra.yml` has not been run yet - first run should be a
   low-risk stack (e.g. `MemoryLayerAlarmsStack`) to prove the OIDC assumption. Branch protection is not configured.
+  **GitHub OIDC gotcha (found live, first run):** repos created after 2026-07-15 emit *immutable* subjects
+  (`repo:owner@ownerId/repo@repoId:...`); the plain `owner/repo` trust never matches and gives "Not authorized to
+  perform sts:AssumeRoleWithWebIdentity". Trust now uses the immutable form (`InfraApp.GITHUB_OIDC_REPO`; deployed
+  2026-09-20). If the repo is recreated/transferred, update it and redeploy `MemoryLayerCiStack` locally.
   Detail: `Docs/OPERATIONS.md` §4.1. Frontend CD is Amplify only - no GitHub Actions frontend deploy.
 - The frontend is **not** deployed via `cdk deploy` — push to `main` and
   Amplify auto-builds (`MemoryLayerFrontendStack` only manages the Amplify

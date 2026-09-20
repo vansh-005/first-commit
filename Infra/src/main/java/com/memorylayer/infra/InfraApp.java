@@ -12,8 +12,9 @@ public class InfraApp {
     // physical IDs stable across updates.
     public static final String AMPLIFY_ORIGIN = "https://main.d28nd6lc9fjyiv.amplifyapp.com";
 
-    // Repository allowed to assume the CI deploy role (OIDC trust; see CiStack).
-    public static final String GITHUB_REPO = "vansh-005/first-commit";
+    // Repository allowed to assume the CI deploy role, in immutable OIDC-subject form
+    // owner@ownerId/repo@repoId (see CiStack for why the plain owner/repo form does not match).
+    public static final String GITHUB_OIDC_REPO = "vansh-005@137313429/first-commit@1374979145";
 
     public static void main(final String[] args) {
         App app = new App();
@@ -62,7 +63,7 @@ public class InfraApp {
         // GitHub Actions OIDC provider + deploy role for .github/workflows/deploy-infra.yml.
         // Deployed only locally via deploy.ps1 (never by the workflow — see CiStack).
         new CiStack(app, "MemoryLayerCiStack",
-                StackProps.builder().env(env).build(), GITHUB_REPO);
+                StackProps.builder().env(env).build(), GITHUB_OIDC_REPO);
 
         app.synth();
     }
