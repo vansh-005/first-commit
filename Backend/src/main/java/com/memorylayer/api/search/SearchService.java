@@ -21,7 +21,7 @@ import java.util.List;
 /**
  * Docs/API.md §18. Every retrieval injects {@code userId == authenticatedUserId} server-side
  * — the request DTO has no field a client could use to set or override it (Docs/DATA_MODEL.md
- * §10, AGENTS.md "Bedrock retrieval").
+ * §10, Docs/ARCHITECTURE.md).
  */
 @Service
 public class SearchService {

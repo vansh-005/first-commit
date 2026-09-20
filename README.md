@@ -109,7 +109,7 @@ EventBridge schedules reconciliation and stale-document cleanup; CloudWatch alar
 |---|---|
 | [`Backend/`](Backend/) | Java 21 / Spring Boot API Lambda and background workers (ingestion coordinator, status reconciler, stale cleanup) |
 | [`Frontend/`](Frontend/) | React + TypeScript + Vite app: landing, library, search, ask, public `/engineering` page |
-| [`Infra/`](Infra/) | AWS CDK app (Java): auth, data, ingestion, API, frontend and alarms stacks; deploy and smoke-test scripts |
+| [`Infra/`](Infra/) | AWS CDK app (Java): auth, data, ingestion, API, frontend, alarms and CI (GitHub OIDC) stacks; deploy and smoke-test scripts |
 | [`Docs/`](Docs/) | Architecture, API, data model, operations, product and frontend design docs; [`diagrams/`](Docs/diagrams/) holds the canonical SVGs and their generator |
 
 ## Local development

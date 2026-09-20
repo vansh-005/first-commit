@@ -12,7 +12,7 @@ import java.util.Collection;
  * — confirmed via {@code javap} and a live call that both APIs' retrieval configuration take
  * the identical {@code RetrievalFilter} shape. This is deliberately not duplicated per
  * endpoint: it is the one line that enforces {@code userId == authenticated JWT.sub}
- * server-side (Docs/DATA_MODEL.md §10, AGENTS.md "Bedrock retrieval").
+ * server-side (Docs/DATA_MODEL.md §10).
  */
 public final class RetrievalFilters {
 

@@ -12,7 +12,7 @@ This document defines the frontend UX, information architecture, visual directio
 
 The frontend is not treated as a thin shell over the backend. The hackathon explicitly evaluates **design and usability**, so the product must feel intentional, fast, and polished.
 
-This document is the current design contract for both humans and coding agents.
+This document is the current design contract for contributors.
 
 ---
 

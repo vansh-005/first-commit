@@ -19,7 +19,7 @@ public class InfraApp {
     public static void main(final String[] args) {
         App app = new App();
 
-        // Region is locked to ap-south-1 per AGENTS.md; account comes from the CDK CLI's
+        // Region is locked to ap-south-1 per Docs/ARCHITECTURE.md; account comes from the CDK CLI's
         // resolved local credentials rather than being hardcoded in source.
         Environment env = Environment.builder()
                 .account(System.getenv("CDK_DEFAULT_ACCOUNT"))
