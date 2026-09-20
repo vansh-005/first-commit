@@ -43,16 +43,39 @@ class CiStackTest {
     }
 
     @Test
-    void roleCanOnlyAssumeBootstrapRolesAndDescribeApiStack() {
+    void roleCanOnlyAssumeBootstrapRolesAndDescribeDeployableStacks() {
         Template template = synth();
-        String json = template.toJSON().toString();
-        // No broad grants: only the two statements below exist on the role's inline policy.
+        String assume = ":iam::123456789012:role/cdk-hnb659fds-%s-role-123456789012-ap-south-1";
+        List<String> stacks = List.of("MemoryLayerAuthStack", "MemoryLayerDataStack", "MemoryLayerIngestionStack",
+                "MemoryLayerApiStack", "MemoryLayerFrontendStack", "MemoryLayerAlarmsStack");
+
+        Map<String, Object> policy = template.findResources("AWS::IAM::Policy").values().iterator().next();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> props = (Map<String, Object>) policy.get("Properties");
+        String doc = props.get("PolicyDocument").toString();
+
+        // Bootstrap roles: deploy, file-publishing and lookup.
+        for (String kind : List.of("deploy", "file-publishing", "lookup")) {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    doc.contains(String.format(assume, kind)), kind + "-role must be assumable");
+        }
+        // DescribeStacks: every deployable stack, never the CI stack.
+        for (String stack : stacks) {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    doc.contains(":stack/" + stack + "/*"), stack + " must be describable");
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(doc.contains("MemoryLayerCiStack"));
+
+        // Exactly two statements, both with explicit (non-wildcard-only) resources.
         template.hasResourceProperties("AWS::IAM::Policy", Match.objectLike(Map.of(
                 "PolicyDocument", Match.objectLike(Map.of(
                         "Statement", List.of(
                                 Match.objectLike(Map.of("Action", "sts:AssumeRole")),
                                 Match.objectLike(Map.of("Action", "cloudformation:DescribeStacks"))))))));
+
+        String json = template.toJSON().toString();
         org.junit.jupiter.api.Assertions.assertFalse(json.contains("\"Action\":\"*\""));
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("\"Resource\":\"*\""));
         org.junit.jupiter.api.Assertions.assertFalse(json.contains("AdministratorAccess"));
     }
 }

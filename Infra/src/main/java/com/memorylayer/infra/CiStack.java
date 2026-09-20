@@ -34,6 +34,9 @@ public class CiStack extends Stack {
 
     private static final String OIDC_HOST = "token.actions.githubusercontent.com";
     // Default CDK bootstrap qualifier (matches the deployed CDKToolkit stack).
+    private static final List<String> DEPLOYABLE_STACKS = List.of(
+            "MemoryLayerAuthStack", "MemoryLayerDataStack", "MemoryLayerIngestionStack",
+            "MemoryLayerApiStack", "MemoryLayerFrontendStack", "MemoryLayerAlarmsStack");
     private static final String BOOTSTRAP_QUALIFIER = "hnb659fds";
 
     /**
@@ -71,18 +74,23 @@ public class CiStack extends Stack {
                 .actions(List.of("sts:AssumeRole"))
                 .resources(List.of(
                         bootstrapRoleArn("deploy-role"),
-                        bootstrapRoleArn("file-publishing-role")))
+                        bootstrapRoleArn("file-publishing-role"),
+                        bootstrapRoleArn("lookup-role")))
                 .build());
 
         deployRole.addToPolicy(PolicyStatement.Builder.create()
-                .sid("ReadApiStackOutputsForSmokeTest")
+                .sid("DescribeDeployableStacks")
                 .effect(Effect.ALLOW)
                 .actions(List.of("cloudformation:DescribeStacks"))
-                .resources(List.of(formatArn(software.amazon.awscdk.ArnComponents.builder()
-                        .service("cloudformation")
-                        .resource("stack")
-                        .resourceName("MemoryLayerApiStack/*")
-                        .build())))
+                // Exactly the stacks deploy-infra.yml may deploy (diff + ApiStack outputs for the
+                // health check). Deliberately excludes this stack (MemoryLayerCiStack).
+                .resources(DEPLOYABLE_STACKS.stream()
+                        .map(name -> formatArn(software.amazon.awscdk.ArnComponents.builder()
+                                .service("cloudformation")
+                                .resource("stack")
+                                .resourceName(name + "/*")
+                                .build()))
+                        .toList())
                 .build());
 
         CfnOutput.Builder.create(this, "GithubDeployRoleArn").value(deployRole.getRoleArn()).build();
