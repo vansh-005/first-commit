@@ -1,0 +1,94 @@
+name: CI
+
+# Validation only. No AWS credentials are used or required here.
+# Frontend CD is AWS Amplify (auto-build on push to main) - intentionally not duplicated here.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (typecheck, test, lint, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc -b
+      - name: Tests
+        run: npm test
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+
+  backend:
+    name: Backend (mvn clean verify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: mvn -B clean verify
+
+  infra:
+    name: Infra (tests, cdk synth)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Pinned CDK CLI; must stay compatible with aws-cdk-lib in Infra/pom.xml.
+      CDK_CLI_VERSION: 2.1141.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk@${CDK_CLI_VERSION}
+      # The Lambda constructs bundle Backend/target/backend.jar. Backend tests run in the
+      # backend job, so they are skipped here.
+      - name: Build backend jar (needed by synth)
+        working-directory: Backend
+        run: mvn -B -q clean package -DskipTests
+      - name: Infra tests
+        working-directory: Infra
+        run: mvn -B test
+      # Synth needs NO AWS credentials. It does need a syntactically valid account id
+      # (AuthStack derives its Cognito domain prefix from it) and the two fail-fast env vars
+      # that InfraApp requires. These are dummy, synth-only values; the templates are never deployed.
+      - name: cdk synth
+        working-directory: Infra
+        env:
+          CDK_DEFAULT_ACCOUNT: "123456789012"
+          GOOGLE_OAUTH_CLIENT_ID: ci-synth-only.apps.googleusercontent.com
+          ALARM_EMAIL: ci-synth-only@example.com
+        run: cdk synth --quiet --no-notices

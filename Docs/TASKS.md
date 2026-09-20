@@ -93,6 +93,6 @@ small, correct and low-cost.
 - [x] Architecture diagrams and public engineering page
 - [x] Cost story: on-demand / serverless, no always-on infrastructure (see `ARCHITECTURE.md` §15)
 - [x] README
-- [ ] Demo video link (added to the README when published)
-- [ ] CI/CD workflow (final repository change)
+- [x] Demo video link (in the README)
+- [x] CI/CD: `ci.yml`, `deploy-infra.yml` and `MemoryLayerCiStack` (deployed); GitHub variables/secret and `production` environment configured (`OPERATIONS.md` §4.1). `deploy-infra.yml` first run still pending.
 - [ ] Final cleanup of coding-agent files (`AGENTS.md`, `CLAUDE.md`, `Docs/KNOWLEDGE_TRANSFER.md`, `Docs/AWS.md`) after CI/CD

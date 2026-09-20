@@ -1,0 +1,214 @@
+name: Deploy infrastructure
+
+# Manual, approval-gated CDK deployment. GitHub-side equivalent of Infra/deploy.ps1 and it keeps
+# the same safety properties:
+#   - always rebuilds Backend/target/backend.jar (mvn clean package) - no stale jar
+#   - fails fast on missing / placeholder GOOGLE_OAUTH_CLIENT_ID and ALARM_EMAIL
+#   - runs Backend + Infra tests
+#   - shows `cdk diff` for exactly the named stacks BEFORE anything is deployed
+#   - a human approval (GitHub Environment "production") stands in for the typed 'deploy' prompt
+#   - always `--exclusively`: no dependency stack is ever pulled in silently
+# AWS auth is GitHub OIDC -> sts:AssumeRoleWithWebIdentity. No long-lived keys anywhere.
+# MemoryLayerCiStack (the OIDC role itself) is deliberately not deployable from here.
+# Frontend CD is AWS Amplify (auto-build on push to main); it is not part of this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      stacks:
+        description: >-
+          Comma-separated stacks to deploy (exclusively). Allowed: MemoryLayerAuthStack,
+          MemoryLayerDataStack, MemoryLayerIngestionStack, MemoryLayerApiStack,
+          MemoryLayerFrontendStack, MemoryLayerAlarmsStack
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-infra
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  # Pinned CDK CLI; must stay compatible with aws-cdk-lib in Infra/pom.xml.
+  CDK_CLI_VERSION: 2.1141.0
+
+jobs:
+  plan:
+    name: Validate, test and diff (no changes made)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      stacks: ${{ steps.stacks.outputs.stacks }}
+    env:
+      GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+      ALARM_EMAIL: ${{ secrets.ALARM_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate stack selection
+        id: stacks
+        env:
+          INPUT_STACKS: ${{ inputs.stacks }}
+        run: |
+          set -euo pipefail
+          allowed="MemoryLayerAuthStack MemoryLayerDataStack MemoryLayerIngestionStack MemoryLayerApiStack MemoryLayerFrontendStack MemoryLayerAlarmsStack"
+          selected=""
+          for s in $(echo "$INPUT_STACKS" | tr ',' ' '); do
+            if ! echo " $allowed " | grep -q " $s "; then
+              echo "::error::'$s' is not an allowed stack. Allowed: $allowed"
+              exit 1
+            fi
+            selected="$selected $s"
+          done
+          selected="$(echo $selected | xargs)"
+          if [ -z "$selected" ]; then
+            echo "::error::No stacks selected."
+            exit 1
+          fi
+          echo "stacks=$selected" >> "$GITHUB_OUTPUT"
+          echo "Selected stacks: $selected"
+
+      - name: Require real GOOGLE_OAUTH_CLIENT_ID and ALARM_EMAIL
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_OAUTH_CLIENT_ID// }" ] || [ -z "${ALARM_EMAIL// }" ]; then
+            echo "::error::GOOGLE_OAUTH_CLIENT_ID (repo variable) and ALARM_EMAIL (secret) must both be set."
+            exit 1
+          fi
+          case "$GOOGLE_OAUTH_CLIENT_ID" in
+            *placeholder*|*ci-synth-only*) echo "::error::GOOGLE_OAUTH_CLIENT_ID looks like a placeholder."; exit 1;;
+          esac
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk@${CDK_CLI_VERSION}
+
+      - name: Rebuild backend jar and run Backend tests (mvn clean package)
+        working-directory: Backend
+        run: mvn -B clean package
+      - name: Infra tests
+        working-directory: Infra
+        run: mvn -B test
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-infra-plan-${{ github.run_id }}
+
+      - name: cdk synth
+        working-directory: Infra
+        run: cdk synth --quiet --no-notices ${{ steps.stacks.outputs.stacks }} --exclusively
+
+      - name: cdk diff (review before approving the deploy job)
+        working-directory: Infra
+        env:
+          STACKS: ${{ steps.stacks.outputs.stacks }}
+        run: |
+          set -o pipefail
+          cdk diff $STACKS --exclusively --no-notices 2>&1 | tee "$RUNNER_TEMP/diff.txt"
+          {
+            echo "## cdk diff for: $STACKS"
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/diff.txt" | head -c 60000
+            echo '```'
+            echo "Approve the **deploy** job only if this diff is exactly what you expect."
+            echo "AuthStack/DataStack normally show zero diff; an unexpected diff there means stop."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy (requires production environment approval)
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Configure required reviewers on this environment (Settings > Environments) so the diff
+    # above is reviewed before this job starts. The OIDC trust policy requires this environment.
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+      ALARM_EMAIL: ${{ secrets.ALARM_EMAIL }}
+      STACKS: ${{ needs.plan.outputs.stacks }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require real GOOGLE_OAUTH_CLIENT_ID and ALARM_EMAIL
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_OAUTH_CLIENT_ID// }" ] || [ -z "${ALARM_EMAIL// }" ]; then
+            echo "::error::GOOGLE_OAUTH_CLIENT_ID and ALARM_EMAIL must both be set."
+            exit 1
+          fi
+          case "$GOOGLE_OAUTH_CLIENT_ID" in
+            *placeholder*|*ci-synth-only*) echo "::error::GOOGLE_OAUTH_CLIENT_ID looks like a placeholder."; exit 1;;
+          esac
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk@${CDK_CLI_VERSION}
+
+      # Always rebuild immediately before deploying - never ship a stale jar.
+      - name: Rebuild backend jar and run Backend tests (mvn clean package)
+        working-directory: Backend
+        run: mvn -B clean package
+      - name: Infra tests
+        working-directory: Infra
+        run: mvn -B test
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-infra-deploy-${{ github.run_id }}
+
+      - name: cdk synth
+        working-directory: Infra
+        run: cdk synth --quiet --no-notices $STACKS --exclusively
+
+      - name: cdk diff
+        working-directory: Infra
+        run: cdk diff $STACKS --exclusively --no-notices
+
+      - name: cdk deploy (--exclusively)
+        working-directory: Infra
+        run: cdk deploy $STACKS --exclusively --require-approval never --no-notices
+
+      - name: Health smoke test (GET /api/v1/health)
+        run: |
+          set -euo pipefail
+          api="$(aws cloudformation describe-stacks --stack-name MemoryLayerApiStack \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" --output text)"
+          if [ -z "$api" ] || [ "$api" = "None" ]; then
+            echo "::error::Could not discover ApiEndpoint from MemoryLayerApiStack."
+            exit 1
+          fi
+          for i in 1 2 3 4 5 6; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$api/api/v1/health" || true)"
+            echo "attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then echo "Health check passed."; exit 0; fi
+            sleep 10
+          done
+          echo "::error::Health check did not return 200."
+          exit 1

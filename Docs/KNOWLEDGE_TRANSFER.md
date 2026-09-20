@@ -21,7 +21,7 @@ other docs instead.
   indexes them via a Bedrock Knowledge Base, and users later search/ask
   over their own corpus in natural language. See `Docs/PRODUCT.md`.
 - **Current deployed environment:** live in AWS account `<account-id>`,
-  region `ap-south-1`. All 6 app stacks are deployed and healthy.
+  region `ap-south-1`. All 6 app stacks plus MemoryLayerCiStack (CI/CD OIDC) are deployed and healthy.
 - **Phase status** (see `Docs/TASKS.md` for full detail):
   - Phases 1–7: **implemented, tested, and deployed.**
   - Phase 7 (reliability/operational safety — alarms, stale-document
@@ -66,6 +66,7 @@ MemoryLayerIngestionStack   Coordinator/Reconciler/StaleCleanup Lambdas, KB, dat
 MemoryLayerApiStack         API Gateway HTTP API + Java Lambda (SnapStart)
 MemoryLayerFrontendStack    Amplify app (config only — content deploys via git push)
 MemoryLayerAlarmsStack      SNS topic + 8 CloudWatch alarms (Phase 7)
+MemoryLayerCiStack          GitHub OIDC provider + deploy role (CI/CD; deploy locally via deploy.ps1; deployed 2026-09-20)
 ```
 
 Key deployed resources (identifiers are redacted in this public repository — resolve them with the AWS CLI
@@ -148,6 +149,15 @@ typed confirmation (`deploy`), then deploys with `--exclusively`.
   (`-Stacks StackA,StackB`) — the script normalizes it internally. Don't
   pass space-separated stack names as separate arguments; that does not
   bind correctly under `-File` invocation.
+- **CI/CD (`.github/workflows/`):** `ci.yml` = PR/main validation, no AWS creds (dummy synth env incl.
+  `CDK_DEFAULT_ACCOUNT`). `deploy-infra.yml` = manual `workflow_dispatch`, OIDC role `memory-layer-github-deploy`
+  (from `MemoryLayerCiStack`), plan job -> `production` environment approval -> deploy `--exclusively` -> health check.
+  Needs GitHub variable `AWS_DEPLOY_ROLE_ARN`, variable `GOOGLE_OAUTH_CLIENT_ID`, secret `ALARM_EMAIL`. Never make
+  the workflow able to deploy `MemoryLayerCiStack` (self-modifying trust). `deploy.ps1` remains the local path.
+  **Configured:** the three GitHub variables/secret exist, and the `production` environment has a required reviewer
+  (self-review allowed) and is restricted to `main`. `deploy-infra.yml` has not been run yet - first run should be a
+  low-risk stack (e.g. `MemoryLayerAlarmsStack`) to prove the OIDC assumption. Branch protection is not configured.
+  Detail: `Docs/OPERATIONS.md` §4.1. Frontend CD is Amplify only - no GitHub Actions frontend deploy.
 - The frontend is **not** deployed via `cdk deploy` — push to `main` and
   Amplify auto-builds (`MemoryLayerFrontendStack` only manages the Amplify
   app's own config, not its content).
@@ -441,7 +451,7 @@ cd Backend; mvn test                 # tests only
 cd Infra; mvn test                   # Infra-level CDK unit tests
 cd Infra; npx cdk synth              # requires GOOGLE_OAUTH_CLIENT_ID + ALARM_EMAIL
 cd Infra; npx cdk diff <Stacks> --exclusively
-cd Infra; ./deploy.ps1 -Stacks <Stacks>   # the only sanctioned deploy path
+cd Infra; ./deploy.ps1 -Stacks <Stacks>   # sanctioned local deploy (CI equivalent: deploy-infra.yml)
 
 # Frontend
 cd Frontend; npm run build

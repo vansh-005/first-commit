@@ -114,6 +114,31 @@ The script, in order:
 5. Prompts for explicit confirmation (typing `deploy`) before doing anything to AWS.
 6. Deploys with `--exclusively`.
 
+### 4.1 CI/CD via GitHub Actions
+
+`.github/workflows/ci.yml` validates every pull request and push to `main` (frontend typecheck/tests/lint/build,
+`mvn clean verify`, infra tests, `cdk synth`). It uses no AWS credentials: synth runs with dummy
+`CDK_DEFAULT_ACCOUNT` / `GOOGLE_OAUTH_CLIENT_ID` / `ALARM_EMAIL` values (a concrete account string is required
+because `AuthStack` derives the Cognito domain prefix from it; no lookups happen).
+
+`.github/workflows/deploy-infra.yml` is the manual, GitHub-hosted equivalent of `deploy.ps1` and preserves the same
+properties: fresh `mvn clean package`, fail-fast env vars, Backend + Infra tests, `cdk diff` before any change,
+approval before deploy, `--exclusively`. Two jobs: **plan** (build, test, synth, diff -> job summary; runs only on
+`main`) and **deploy** (`environment: production`, so required reviewers approve *after* seeing the diff; rebuilds
+again, deploys, then `GET /api/v1/health` must return 200). `MemoryLayerCiStack` is not selectable in the workflow -
+deploy it locally with `deploy.ps1`.
+
+AWS auth is GitHub OIDC -> `sts:AssumeRoleWithWebIdentity` into role `memory-layer-github-deploy` (defined in
+`MemoryLayerCiStack`). Trust is limited to `repo:vansh-005/first-commit` with subject `environment:production` or
+`ref:refs/heads/main`, audience `sts.amazonaws.com`. The role can only assume the CDK bootstrap deploy /
+file-publishing roles and `cloudformation:DescribeStacks` on `MemoryLayerApiStack`. Note the bootstrap
+`cfn-exec-role` is `AdministratorAccess`, so anyone who can approve `production` can effectively deploy anything via
+CloudFormation - protect that environment accordingly.
+
+One-time setup: deploy `MemoryLayerCiStack` locally, then set GitHub variable `AWS_DEPLOY_ROLE_ARN` (the stack's
+`GithubDeployRoleArn` output), variable `GOOGLE_OAUTH_CLIENT_ID`, secret `ALARM_EMAIL`, and configure the
+`production` environment (required reviewers; deployment branches: `main` only).
+
 ### Frontend deployment
 
 The frontend is **not** deployed via `cdk deploy` — `MemoryLayerFrontendStack`'s Amplify app

@@ -9,7 +9,7 @@ question and get an answer grounded in your own files, with a source you can ope
 
 **[Live demo](https://main.d28nd6lc9fjyiv.amplifyapp.com/)** &nbsp;·&nbsp;
 **[Engineering showcase](https://main.d28nd6lc9fjyiv.amplifyapp.com/engineering)** &nbsp;·&nbsp;
-Demo video — will be added before submission
+**[Demo video](https://www.youtube.com/watch?v=76Em-SJNLwM)**
 
 Built for the **AWS First Commit Hackathon — Ship It**.
 
@@ -162,6 +162,20 @@ cd Infra
 
 See [`Docs/OPERATIONS.md`](Docs/OPERATIONS.md) for the full procedure. (AWS resource names keep the original
 `memory-layer` prefix.)
+
+## CI/CD
+
+Pull requests run frontend, backend and infrastructure validation. Production frontend deployments are handled
+automatically by AWS Amplify after merge, while infrastructure deployments use a manually triggered GitHub Actions
+workflow authenticated to AWS using short-lived OIDC credentials.
+
+- **CI** (`.github/workflows/ci.yml`, on pull requests and pushes to `main`): frontend typecheck / tests / lint / build,
+  backend `mvn clean verify` (Java 21), and infrastructure tests + `cdk synth`. CI needs no AWS credentials.
+- **Frontend CD:** AWS Amplify is connected to `main` and builds and deploys on every merge. There is deliberately no
+  duplicate GitHub Actions frontend deploy.
+- **Infrastructure CD** (`.github/workflows/deploy-infra.yml`, manual `workflow_dispatch`): rebuilds the backend jar,
+  runs tests and `cdk synth`, shows `cdk diff`, then deploys only the selected stacks with `--exclusively` after a
+  `production` environment gate, and finishes with a `/api/v1/health` smoke test. Details: `Docs/OPERATIONS.md` §4.1.
 
 ## Security
 

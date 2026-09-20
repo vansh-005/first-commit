@@ -12,6 +12,9 @@ public class InfraApp {
     // physical IDs stable across updates.
     public static final String AMPLIFY_ORIGIN = "https://main.d28nd6lc9fjyiv.amplifyapp.com";
 
+    // Repository allowed to assume the CI deploy role (OIDC trust; see CiStack).
+    public static final String GITHUB_REPO = "vansh-005/first-commit";
+
     public static void main(final String[] args) {
         App app = new App();
 
@@ -55,6 +58,11 @@ public class InfraApp {
         // queue/DLQ from DataStack).
         new AlarmsStack(app, "MemoryLayerAlarmsStack",
                 StackProps.builder().env(env).build(), apiStack, ingestionStack, dataStack, alarmEmail);
+
+        // GitHub Actions OIDC provider + deploy role for .github/workflows/deploy-infra.yml.
+        // Deployed only locally via deploy.ps1 (never by the workflow — see CiStack).
+        new CiStack(app, "MemoryLayerCiStack",
+                StackProps.builder().env(env).build(), GITHUB_REPO);
 
         app.synth();
     }
