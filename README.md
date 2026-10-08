@@ -9,9 +9,6 @@ question and get an answer grounded in your own files, with a source you can ope
 
 **[Live demo](https://main.d28nd6lc9fjyiv.amplifyapp.com/)** &nbsp;·&nbsp;
 **[Engineering showcase](https://main.d28nd6lc9fjyiv.amplifyapp.com/engineering)** &nbsp;·&nbsp;
-**[Demo video](https://www.youtube.com/watch?v=76Em-SJNLwM)**
-
-Built for the **AWS First Commit Hackathon — Ship It**.
 
 </div>
 
